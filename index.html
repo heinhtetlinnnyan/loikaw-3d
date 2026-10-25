@@ -67,6 +67,25 @@
   <button id="t-down" class="tbtn">▼</button>
 </div>
 
-<script type="module" src="main.js"></script>
+<script>
+  // If the game can't start, say why on the loading line instead of sitting there forever.
+  window.showProblem = (kind, detail) => {
+    const el = document.getElementById('loading');
+    if (!el) return;
+    el.hidden = false;
+    el.classList.add('problem');
+    el.innerHTML = {
+      nowebgl: '<b>Your browser isn’t letting this page use the graphics chip (WebGL is off).</b> In Chrome or Chromium, open Settings → System and turn on “Use graphics acceleration when available”, then restart the browser. In Firefox, open <code>about:support</code> and check that WebGL 1 and 2 aren’t “blocklisted”. You can test at <a href="https://get.webgl.org" target="_blank" rel="noopener">get.webgl.org</a>.',
+      load: '<b>Part of the game didn’t download.</b> Check your connection, or whether something is blocking cdn.jsdelivr.net, then reload.',
+      error: '<b>Something went wrong while building the town.</b> Please send this to the person who made it: ',
+      slow: 'Still loading… On a slow connection or a computer without graphics acceleration, the first load can take a minute.',
+    }[kind] + (detail ? '<br><code>' + String(detail).replace(/[<&]/g, (c) => ({ '<': '&lt;', '&': '&amp;' })[c]) + '</code>' : '');
+  };
+  const shown = () => document.getElementById('loading')?.classList.contains('problem');
+  addEventListener('error', (e) => { if (e.message && !shown()) window.showProblem('error', e.message); });
+  addEventListener('unhandledrejection', (e) => { if (!shown()) window.showProblem('error', e.reason?.message || e.reason); });
+  setTimeout(() => { const el = document.getElementById('loading'); if (el && !el.hidden && !el.classList.contains('problem')) window.showProblem('slow'); }, 25000);
+</script>
+<script type="module" src="main.js" onerror="window.showProblem('load', 'main.js')"></script>
 </body>
 </html>

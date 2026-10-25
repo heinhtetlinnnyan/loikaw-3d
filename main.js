@@ -14,16 +14,31 @@ const ROAD_C = { trunk: 0x6b6560, primary: 0x6b6560, tertiary: 0x77706a, unclass
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// WebGL can be missing when the browser won't use the graphics chip; say so instead of hanging
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  window.showProblem?.('nowebgl');
+  throw e;
+}
+// Without graphics acceleration the browser draws on the processor (SwiftShader, llvmpipe):
+// drop the resolution, view distance and antialiasing so it stays playable
+const LOW_GFX = (() => {
+  const gl = renderer.getContext(), info = gl.getExtension('WEBGL_debug_renderer_info');
+  const name = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '';
+  return /swiftshader|llvmpipe|software|softpipe|basic render/i.test(name) || new URLSearchParams(location.search).has('low');
+})();
+renderer.setPixelRatio(LOW_GFX ? 0.6 : Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+if (LOW_GFX) document.documentElement.classList.add('low-gfx');
 
 const scene = new THREE.Scene();
 const SKY = new THREE.Color(0xb9cbd8);
 scene.background = SKY;
-scene.fog = new THREE.Fog(SKY, 400, 4200);
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 9000);
+scene.fog = new THREE.Fog(SKY, 400, LOW_GFX ? 1400 : 4200);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, LOW_GFX ? 1600 : 9000);
 camera.rotation.order = 'YXZ';
 
 const hemi = new THREE.HemisphereLight(0xdfe9f2, 0x5b5040, 1.1);
@@ -886,7 +901,7 @@ function setTime(h) {
   night = 1 - day;
   const sky = SKY_NIGHT.clone().lerp(SKY_DAY, day).lerp(SKY_GLOW, glow * 0.55);
   scene.background.copy(sky); scene.fog.color.copy(sky);
-  scene.fog.far = 2600 + 1600 * day;
+  scene.fog.far = LOW_GFX ? 1400 : 2600 + 1600 * day;
   hemi.intensity = 0.12 + 1.0 * day;
   hemi.color.copy(C(0x6f7fa8).lerp(C(0xdfe9f2), day));
   sun.position.copy(sunDir).multiplyScalar(2000);
@@ -1106,7 +1121,8 @@ function tick() {
   if (!started) {
     // slow aerial orbit behind the intro card
     const t = clock.elapsedTime * 0.03, cx = city?.x ?? 0, cz = city?.z ?? 0;
-    camera.position.set(cx + Math.sin(t) * 1600, ground(cx, cz) + 650, cz + Math.cos(t) * 1600);
+    const R = LOW_GFX ? 700 : 1600;
+    camera.position.set(cx + Math.sin(t) * R, ground(cx, cz) + R * 0.4, cz + Math.cos(t) * R);
     camera.lookAt(cx, ground(cx, cz), cz);
     renderer.render(scene, camera);
     return requestAnimationFrame(tick);
@@ -1211,7 +1227,7 @@ function tick() {
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); flameMat.uniforms.scale.value = laneFlames.uniforms.scale.value = innerHeight / 2; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (started) sizeMap(); });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); renderer.setPixelRatio(LOW_GFX ? 0.6 : Math.min(devicePixelRatio, 2)); flameMat.uniforms.scale.value = laneFlames.uniforms.scale.value = innerHeight / 2; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (started) sizeMap(); });
 new ResizeObserver(() => started && sizeMap()).observe(mm);
 console.info(`Loikaw 3D: ${footprints.length} buildings (${estimated} with estimated height), ${data.roads.length} roads`);
 requestAnimationFrame(tick);
