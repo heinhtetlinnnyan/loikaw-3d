@@ -1,6 +1,6 @@
 # Loikaw 3D
 
-Walk, cycle or fly around Loikaw (လွိုင်ကော်), Kayah State, Myanmar, in your browser.
+Walk, cycle, ride a motorbike or fly around Loikaw (လွိုင်ကော်), Kayah State, Myanmar, in your browser.
 
 **Play:** https://heinhtetlinnnyan.github.io/loikaw-3d/
 
@@ -8,12 +8,12 @@ Walk, cycle or fly around Loikaw (လွိုင်ကော်), Kayah State, 
 
 | | |
 |---|---|
-| `W A S D` / arrows | move (on the bicycle, A/D steer) |
+| `W A S D` / arrows | move (bicycle and motorbike: W go, S brake, A/D steer) |
 | mouse | look (click the scene to capture the mouse) |
-| `Shift` | run / pedal harder / fly faster |
+| `Shift` | run / pedal harder / open the throttle / fly faster |
 | `Space` | jump (walk) · climb (fly) |
 | `C` | descend (fly) |
-| `1` `2` `3` | walk · bicycle · fly |
+| `1` `2` `3` `4` | walk · bicycle · motorbike · fly |
 | `M` | bigger map; click the map to jump there |
 
 On a phone: joystick bottom-left, drag anywhere to look.

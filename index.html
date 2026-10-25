@@ -25,9 +25,10 @@
   <div class="modes" role="radiogroup" aria-label="Travel mode">
     <button class="mode" data-mode="walk" id="m-walk"><b>Walk</b><span>5 km/h · Shift to run</span></button>
     <button class="mode" data-mode="bike" id="m-bike"><b>Bicycle</b><span>18 km/h · coast and lean</span></button>
+    <button class="mode" data-mode="moto" id="m-moto"><b>Motorbike</b><span>40 km/h · 70 with Shift</span></button>
     <button class="mode" data-mode="fly" id="m-fly"><b>Fly</b><span>Space up · C down</span></button>
   </div>
-  <p class="keys">WASD or arrows to move · mouse to look · 1 2 3 switch mode · M map · Esc pause</p>
+  <p class="keys">WASD or arrows to move · mouse to look · 1 2 3 4 switch mode · M map · Esc pause</p>
   <p id="loading" class="loading">Loading the town…</p>
 </div>
 
@@ -39,6 +40,7 @@
   <div class="mode-pills panel">
     <button data-mode="walk" class="pill" id="p-walk">Walk</button>
     <button data-mode="bike" class="pill" id="p-bike">Bike</button>
+    <button data-mode="moto" class="pill" id="p-moto">Motorbike</button>
     <button data-mode="fly" class="pill" id="p-fly">Fly</button>
   </div>
   <canvas id="minimap" class="minimap panel" width="220" height="220" aria-label="Map. Click to jump there."></canvas>

@@ -4,7 +4,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // ---------- travel modes ----------
 const MODES = {
   walk: { eye: 1.65, speed: 1.5, run: 4.5, label: 'Walking' },
-  bike: { eye: 1.55, speed: 5.0, run: 8.0, label: 'Cycling' },
+  // ride: accel = speeding up, coast = slowing when you let go, brake = S key
+  bike: { eye: 1.55, speed: 5.0, run: 8.0, label: 'Cycling', ride: { accel: 2.2, coast: 0.6, brake: 6, lean: 0.03 } },
+  moto: { eye: 1.35, speed: 11.1, run: 19.4, label: 'Riding', ride: { accel: 4.5, coast: 1.5, brake: 10, lean: 0.022 } },
   fly:  { eye: 60,   speed: 25,  run: 90,  label: 'Flying' },
 };
 const ROAD_W = { trunk: 9, primary: 8, secondary: 7, tertiary: 6.5, unclassified: 5, residential: 4.5, service: 3, track: 2.6, footway: 1.6, path: 1.4 };
@@ -21,7 +23,7 @@ const scene = new THREE.Scene();
 const SKY = new THREE.Color(0xb9cbd8);
 scene.background = SKY;
 scene.fog = new THREE.Fog(SKY, 400, 4200);
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.3, 9000);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 9000);
 camera.rotation.order = 'YXZ';
 
 scene.add(new THREE.HemisphereLight(0xdfe9f2, 0x5b5040, 1.1));
@@ -240,11 +242,14 @@ let started = false, mapBig = false;
 
 function setMode(m) {
   const prev = player.mode; player.mode = m;
+  if (!MODES[m].ride) player.speed = 0;
+  vehicle.bike.visible = m === 'bike'; vehicle.moto.visible = m === 'moto';
+  if (m === 'moto') engineOn();
   if (m === 'fly' && prev !== 'fly') { player.y = Math.max(player.y, ground(player.x, player.z) + 60); player.pitch = -0.35; }
   if (m !== 'fly' && prev === 'fly') { player.y = ground(player.x, player.z); player.pitch = 0; player.vy = 0; }
   // don't land inside a building
   for (let a = 0; insideBuilding(player.x, player.z, player.y + 0.1) && a < 60; a++) { player.x += Math.cos(a) * a; player.z += Math.sin(a) * a; player.y = ground(player.x, player.z); }
-  for (const id of ['walk', 'bike', 'fly']) $('p-' + id).setAttribute('aria-pressed', id === m);
+  for (const id of ['walk', 'bike', 'moto', 'fly']) $('p-' + id).setAttribute('aria-pressed', id === m);
 }
 function start(m) {
   started = true; $('intro').hidden = true; $('hud').hidden = false;
@@ -259,7 +264,7 @@ $('loading').hidden = true;
 addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!started) return;
-  if (e.code === 'Digit1') setMode('walk'); if (e.code === 'Digit2') setMode('bike'); if (e.code === 'Digit3') setMode('fly');
+  if (e.code === 'Digit1') setMode('walk'); if (e.code === 'Digit2') setMode('bike'); if (e.code === 'Digit3') setMode('moto'); if (e.code === 'Digit4') setMode('fly');
   if (e.code === 'KeyM') { mapBig = !mapBig; $('minimap').classList.toggle('big', mapBig); sizeMap(); }
   if (e.code === 'Space' && player.mode === 'walk' && player.onGround) { player.vy = 4.2; player.onGround = false; }
   if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -331,6 +336,56 @@ function drawMap() {
   mctx.fillStyle = '#c8402f'; mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5 * dpr; mctx.fill(); mctx.stroke(); mctx.restore();
 }
 
+// ---------- handlebars seen from the saddle ----------
+scene.add(camera);
+const vehicle = { bike: new THREE.Group(), moto: new THREE.Group() };
+{
+  const mat = (c, m = 0.3) => new THREE.MeshStandardMaterial({ color: c, metalness: m, roughness: 0.5 });
+  const bar = (len, r, m) => new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), m);
+  // bicycle: thin silver bar, black grips
+  const b = vehicle.bike, steel = mat(0xc8ccd0, 0.8), grip = mat(0x1d1d1d, 0);
+  const hb = bar(0.62, 0.012, steel); hb.rotation.z = Math.PI / 2; b.add(hb);
+  for (const sx of [-1, 1]) { const g = bar(0.12, 0.018, grip); g.rotation.z = Math.PI / 2; g.position.x = sx * 0.3; b.add(g); }
+  const stem = bar(0.25, 0.014, steel); stem.position.set(0, -0.12, -0.03); stem.rotation.x = 0.3; b.add(stem);
+  b.position.set(0, -0.55, -0.75);
+  // motorbike: wider chrome bar, mirrors, round speedo, red tank
+  const m = vehicle.moto, chrome = mat(0xb9bec4, 0.9), black = mat(0x18191b, 0.2), red = mat(0xc8402f, 0.4);
+  const mb = bar(0.72, 0.014, chrome); mb.rotation.z = Math.PI / 2; m.add(mb);
+  for (const sx of [-1, 1]) {
+    const g = bar(0.13, 0.022, black); g.rotation.z = Math.PI / 2; g.position.x = sx * 0.36; m.add(g);
+    const arm = bar(0.22, 0.006, chrome); arm.position.set(sx * 0.27, 0.11, 0.01); arm.rotation.z = -sx * 0.25; m.add(arm);
+    const mirror = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.01, 20), black); mirror.rotation.x = Math.PI / 2; mirror.position.set(sx * 0.3, 0.2, 0.01); m.add(mirror);
+  }
+  const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.05, 24), black); pod.rotation.x = Math.PI / 2 - 0.5; pod.position.set(0, 0.04, -0.08); m.add(pod);
+  const face = new THREE.Mesh(new THREE.CircleGeometry(0.055, 24), new THREE.MeshBasicMaterial({ color: 0xf4efe6 })); face.rotation.x = -0.5; face.position.set(0, 0.06, -0.065); m.add(face);
+  const tank = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 12), red); tank.scale.set(1, 0.5, 1.4); tank.position.set(0, -0.25, 0.25); m.add(tank);
+  m.position.set(0, -0.62, -0.85);
+  for (const v of Object.values(vehicle)) { v.visible = false; camera.add(v); }
+}
+// engine note: two detuned oscillators through a low-pass, pitch follows speed
+const engine = { ctx: null };
+function engineOn() {
+  if (engine.ctx) return engine.ctx.resume();
+  try {
+    const ctx = new AudioContext(), gain = ctx.createGain(), filter = ctx.createBiquadFilter(), g2 = ctx.createGain();
+    filter.type = 'lowpass'; filter.frequency.value = 600; gain.gain.value = 0; g2.gain.value = 0.4;
+    const osc = ctx.createOscillator(), osc2 = ctx.createOscillator();
+    osc.type = 'sawtooth'; osc2.type = 'square'; osc.frequency.value = 38; osc2.frequency.value = 19;
+    osc.connect(filter); osc2.connect(g2).connect(filter); filter.connect(gain).connect(ctx.destination);
+    osc.start(); osc2.start();
+    Object.assign(engine, { ctx, osc, osc2, gain, filter });
+  } catch { /* no audio: ride silently */ }
+}
+function engineUpdate(throttle) {
+  if (!engine.ctx) return;
+  const on = player.mode === 'moto' && !document.hidden;
+  const rpm = 38 + player.speed * 4.2 + throttle * 14, t = engine.ctx.currentTime;
+  engine.osc.frequency.setTargetAtTime(rpm, t, 0.08);
+  engine.osc2.frequency.setTargetAtTime(rpm / 2, t, 0.08);
+  engine.filter.frequency.setTargetAtTime(500 + throttle * 700 + player.speed * 30, t, 0.1);
+  engine.gain.gain.setTargetAtTime(on ? 0.05 + throttle * 0.04 : 0, t, 0.15);
+}
+
 // ---------- loop ----------
 const clock = new THREE.Clock();
 let bob = 0, hudT = 0;
@@ -357,14 +412,16 @@ function tick() {
 
   let vx = 0, vz = 0;
   const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
-  if (player.mode === 'bike') {
-    // momentum: pedal to speed up, coast, S brakes; A/D steer and lean
-    const target = fwd > 0 ? (fast ? M.run : M.speed) : 0;
-    player.speed += (fwd < 0 ? -6 : target > player.speed ? 2.2 : -0.6) * dt;
-    player.speed = Math.max(0, Math.min(player.speed, target || player.speed));
+  if (M.ride) {
+    // momentum: W to speed up, let go to coast, S brakes; A/D steer and lean
+    const R = M.ride, target = fwd > 0 ? (fast ? M.run : M.speed) : 0;
+    if (fwd < 0) player.speed -= R.brake * dt;
+    else if (player.speed < target) player.speed = Math.min(target, player.speed + R.accel * dt);
+    else player.speed = Math.max(target, player.speed - R.coast * dt);
+    player.speed = Math.max(0, player.speed);
     const steer = -side * Math.min(1.4, 0.5 + player.speed * 0.15);
     player.yaw += steer * dt;
-    player.roll += ((side * Math.min(player.speed, 6) * 0.03) - player.roll) * Math.min(1, dt * 5);
+    player.roll += ((side * Math.min(player.speed, 12) * R.lean) - player.roll) * Math.min(1, dt * 5);
     vx = -sy * player.speed; vz = -cy * player.speed;
   } else {
     player.roll *= 0.9;
@@ -397,9 +454,9 @@ function tick() {
     if (player.y <= g) { player.y = g; player.vy = 0; player.onGround = true; }
   }
 
-  const moving = player.mode === 'bike' ? player.speed / M.run : Math.min(1, Math.hypot(vx, vz) / M.speed);
-  bob += dt * (player.mode === 'bike' ? 6 : fast ? 11 : 8) * (moving > 0.05 ? 1 : 0);
-  const bobY = player.mode === 'fly' ? 0 : Math.sin(bob) * (player.mode === 'bike' ? 0.02 : 0.05) * moving;
+  const moving = M.ride ? player.speed / M.run : Math.min(1, Math.hypot(vx, vz) / M.speed);
+  bob += dt * (player.mode === 'moto' ? 30 : player.mode === 'bike' ? 6 : fast ? 11 : 8) * (moving > 0.05 ? 1 : 0);
+  const bobY = player.mode === 'fly' ? 0 : Math.sin(bob) * (player.mode === 'moto' ? 0.006 : player.mode === 'bike' ? 0.02 : 0.05) * moving;
   camera.position.set(player.x, player.y + (player.mode === 'fly' ? 0 : M.eye) + bobY, player.z);
   camera.rotation.set(player.pitch, player.yaw, -player.roll);
 
@@ -418,10 +475,13 @@ function tick() {
     const street = $('street');
     street.textContent = r ? r.n : player.mode === 'fly' ? 'Above Loikaw' : 'Off the named streets';
     street.lang = r && /[က-႟]/.test(r.n) ? 'my' : 'en';
-    const kmh = (player.mode === 'bike' ? player.speed : Math.hypot(vx, vz)) * 3.6;
+    const kmh = (M.ride ? player.speed : Math.hypot(vx, vz)) * 3.6;
     const lat = data.origin[0] - player.z / 110540, lon = data.origin[1] + player.x / (111320 * Math.cos(data.origin[0] * Math.PI / 180));
     $('meta').textContent = `${M.label} · ${kmh.toFixed(0)} km/h · ${Math.round(BASE + player.y)} m elevation · ${lat.toFixed(4)}° N ${lon.toFixed(4)}° E`;
   }
+  engineUpdate(M.ride && fwd > 0 ? 1 : 0);
+  // handlebars turn with the steering and tip into the lean
+  for (const v of Object.values(vehicle)) v.rotation.set(0, -side * 0.12, player.roll * 0.6);
   drawMap();
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
