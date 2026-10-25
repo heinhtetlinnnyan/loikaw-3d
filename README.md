@@ -38,6 +38,8 @@ On a phone: joystick bottom-left, drag anywhere to look.
 
 - **Old home / အိမ်ဟောင်း**: laid out from its aerial view. The gateway opens off the road to the north through a grey block wall, a red-earth driveway runs south between the houses, and the single-storey house with a low grey tin roof stands just east of it, among big shady trees. Lights at the gate and porch every night.
 
+- **BEHS No. 1 / အထက ၁**: laid out from its aerial view: long one-storey classroom blocks with low gabled tin roofs in rust, grey, green and blue-grey, a white wall and gate on the road, a paved front yard and a walkway running north between the blocks.
+
 **Buildings** get painted facades (plaster houses, shophouses along the main roads, teak houses, concrete blocks) and hipped tin roofs in the blue, green, red and grey seen around town. These are typical styles, not the real look of each building.
 
 **Thadingyut**: paper lanterns and candles along the main route (Myo Nan → clock tower → ရှမ်းပိုင်းတံတား → သီရိမင်္ဂလာဈေး), strings of lights and candles at the pagodas and clock tower, and candles at a few homes, under a full moon.
