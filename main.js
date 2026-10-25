@@ -224,9 +224,10 @@ const corrugated = (() => {
 const roofMat = new THREE.MeshLambertMaterial({ map: corrugated, vertexColors: true, side: THREE.DoubleSide });
 const flatRoofMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
 
-// paint and roof colours seen in photos of Loikaw: lots of blue, green and rusty-red tin roofs
+// paint and roof colours seen in aerial views and photos of Loikaw: mostly rusty brown and
+// red-brown tin, some grey zinc, and the odd blue or green roof
 const PAINT = [0xffffff, 0xf3ead8, 0xe9efe9, 0xf2e2c4, 0xdde6ee, 0xf1d9cf, 0xe4ecd2];
-const ROOFS = [0x3f6fa8, 0x3d8a6a, 0x9a4a35, 0x8a9097, 0x7d2e2a, 0x4f8f95, 0xa65a3c, 0x6d7a84];
+const ROOFS = [0x8a4a3a, 0x7a3f30, 0x96563f, 0xa65a3c, 0x83483a, 0x7d2e2a, 0x8a9097, 0x6d7a84, 0x9aa0a6, 0x3f6fa8, 0x4f8a7a];
 
 // main roads, for placing shophouses along them
 const MAIN = new Set();
@@ -248,8 +249,10 @@ const tri = (B, a, b, c, ua, ub, uc, col) => {
 const toLocal = (lat, lon) => [(lon - data.origin[1]) * 111320 * Math.cos(data.origin[0] * Math.PI / 180), -(lat - data.origin[0]) * 110540];
 // the clock tower stands on a roundabout: keep satellite-traced footprints off it
 const [CLX, CLZ] = toLocal(19.67717, 97.21201);
-// Myo Nan Pagoda: a walled courtyard about 33 x 47 m; the stupa sits ~7 m east of the OSM point
+// Myo Nan Pagoda: a walled courtyard 47 m deep that runs from 16.5 m west of the stupa east to
+// the street; the stupa sits ~7 m east of the OSM point
 const [MNX0, MNZ0] = toLocal(19.677785, 97.211291), MNX = MNX0 + 7, MNZ = MNZ0 + 2;
+const MN_W0 = -16.5, MN_W1 = 46, MN_D = 47; // courtyard extent relative to the stupa
 // သီရိမင်္ဂလာဈေး: the market area from OpenStreetMap; its halls get rows of low blue gable roofs
 const MARKET = [[19.667294, 97.213674], [19.667593, 97.214728], [19.666268, 97.215265], [19.665982, 97.214184]].flatMap(([a, o]) => toLocal(a, o));
 const MARKET_ROOFS = [0x4a7db8, 0x3f6fa8, 0x5a8cc0, 0x6d8fae];
@@ -267,7 +270,7 @@ data.buildings.forEach((b, n) => {
   }
   cx /= m; cz /= m; area /= 2;
   if (Math.hypot(cx - CLX, cz - CLZ) < 9) return;
-  if (Math.abs(cx - MNX) < 17 && Math.abs(cz - MNZ) < 24) return; // inside the pagoda courtyard
+  if (cx - MNX > MN_W0 - 0.5 && cx - MNX < MN_W1 + 0.5 && Math.abs(cz - MNZ) < MN_D / 2 + 0.5) return; // inside the pagoda courtyard
   // walls must wind so their faces point outwards
   const order = [...Array(m).keys()]; if (area > 0) order.reverse();
   area = Math.abs(area);
@@ -432,10 +435,10 @@ let MN_TOP;
   const g0 = ground(MNX, MNZ), white = new THREE.MeshLambertMaterial({ color: 0xf2eee6 });
   const paving = new THREE.MeshLambertMaterial({ color: 0xd9d6cf }), greenRoof = new THREE.MeshLambertMaterial({ color: 0x4f8a5e }), greyRoof = new THREE.MeshLambertMaterial({ color: 0xb8b4ac });
   const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(MNX + x, g0 + y, MNZ + z); scene.add(o); return o; };
-  const W = 33, D = 47;
-  add(new THREE.BoxGeometry(W, 0.8, D), paving, 0, -0.2, 0);                                     // courtyard
-  for (const [x, z, w, d] of [[0, -D / 2, W, 0.4], [-W / 2, 0, 0.4, D], [W / 2, 0, 0.4, D], [-W / 4 - 2, D / 2, W / 2 - 4, 0.4], [W / 4 + 2, D / 2, W / 2 - 4, 0.4]])
-    add(new THREE.BoxGeometry(w, 1.4, d), white, x, 0.7, z);                                      // low wall, gap at the south
+  const W = MN_W1 - MN_W0, D = MN_D, xc = (MN_W0 + MN_W1) / 2;
+  add(new THREE.BoxGeometry(W, 0.8, D), paving, xc, -0.2, 0);                                    // courtyard, out to the street
+  for (const [x, z, w, d] of [[xc, -D / 2, W, 0.4], [MN_W0, 0, 0.4, D], [MN_W1, 0, 0.4, D], [(MN_W0 + 8) / 2, D / 2, 8 - MN_W0, 0.4], [(16 + MN_W1) / 2, D / 2, MN_W1 - 16, 0.4]])
+    add(new THREE.BoxGeometry(w, 1.4, d), white, x, 0.7, z);                                      // low wall, gate at the south
   // stepped terraces with a porch on each side and a small spire on every corner
   let y = 0.2;
   for (const [size, h] of [[18, 1.6], [15, 1.5], [12, 1.4]]) {
@@ -562,9 +565,14 @@ for (const [en, my, lat, lon, dy] of LANDMARKS) { const [x, z] = toLocal(lat, lo
 
 // a short lane that holds a lot of history for someone who grew up here:
 // warm golden paving, and candles on both sides every night
-const MEMORY_LANE = [toLocal(19.672343539514642, 97.21711620384794), toLocal(19.671287811452522, 97.2174005180052)];
-ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 5.4, () => 0xb8743c, () => 0.42, 4);
-ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 2.2, () => 0xe2b26a, () => 0.48, 5);
+// it's a narrow lane between houses that bends a little west near its southern end
+const MEMORY_LANE = (() => {
+  const [ax, az] = toLocal(19.672343539514642, 97.21711620384794), [bx, bz] = toLocal(19.671287811452522, 97.2174005180052);
+  const L = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / L, uz = (bz - az) / L, wx = -uz, wz = ux; // w points west
+  return [[0, 0], [0.45, 0.6], [0.72, 4], [0.88, 2], [1, 0]].map(([t, o]) => [ax + ux * t * L + wx * o, az + uz * t * L + wz * o]);
+})();
+ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 3.4, () => 0xb8743c, () => 0.42, 4);
+ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 1.3, () => 0xe2b26a, () => 0.48, 5);
 
 // ရှမ်းပိုင်းတံတား, also called ဂျပန်တံတား, carrying NH21 over the Balu Chaung: a steel Warren truss
 // on the western of the two spans, which is where the bridge was pointed out
@@ -768,20 +776,22 @@ const flameMat = new THREE.ShaderMaterial({
 const laneFlames = flameMat.clone();
 laneFlames.uniforms.map.value = glowTex; // share the texture instead of an unuploaded copy
 {
-  const [[ax, az], [bx, bz]] = MEMORY_LANE, L = Math.hypot(bx - ax, bz - az), nx = -(bz - az) / L, nz = (bx - ax) / L;
   const pos = [], col = [], size = [], phase = [], warm = new THREE.Color(0xffb54a), soft = new THREE.Color(0xffd9a0);
-  for (let d = 0; d <= L; d += 1.1) {
-    const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L;
-    for (const sd of [-1, 1]) {
-      const cx = x + nx * sd * 2.9, cz = z + nz * sd * 2.9, c = rand(d * 7 + sd) < 0.2 ? soft : warm;
-      pos.push(cx, ground(cx, cz) + 0.55, cz); col.push(c.r, c.g, c.b); size.push(0.6); phase.push(rand(d * 13 + sd * 5));
-    }
-  }
-  // paper lanterns overhead every 8 m, alternating warm colours
   const lanterns = [0xff7a3c, 0xffc23a, 0xff5a7a].map((h) => new THREE.Color(h));
-  for (let d = 4, k = 0; d < L; d += 8, k++) {
-    const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L, c = lanterns[k % 3];
-    pos.push(x, ground(x, z) + 4.2, z); col.push(c.r, c.g, c.b); size.push(1.3); phase.push(rand(k + 99));
+  let run = 0, k = 0;
+  for (let i = 0; i < MEMORY_LANE.length - 1; i++) {
+    const [ax, az] = MEMORY_LANE[i], [bx, bz] = MEMORY_LANE[i + 1], L = Math.hypot(bx - ax, bz - az), nx = -(bz - az) / L, nz = (bx - ax) / L;
+    for (let d = 0; d < L; d += 1.1) {
+      const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L, seed = run + d;
+      // candles along both edges, just inside the house walls
+      for (const sd of [-1, 1]) {
+        const cx = x + nx * sd * 1.75, cz = z + nz * sd * 1.75, c = rand(seed * 7 + sd) < 0.2 ? soft : warm;
+        pos.push(cx, ground(cx, cz) + 0.5, cz); col.push(c.r, c.g, c.b); size.push(0.55); phase.push(rand(seed * 13 + sd * 5));
+      }
+      // a paper lantern overhead every 8 m, alternating warm colours
+      if ((seed / 8 | 0) > k) { k++; const c = lanterns[k % 3]; pos.push(x, ground(x, z) + 3.8, z); col.push(c.r, c.g, c.b); size.push(1.2); phase.push(rand(k + 99)); }
+    }
+    run += L;
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
