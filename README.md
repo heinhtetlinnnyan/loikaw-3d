@@ -38,7 +38,7 @@ On a phone: joystick bottom-left, drag anywhere to look.
 
 **Buildings** get painted facades (plaster houses, shophouses along the main roads, teak houses, concrete blocks) and hipped tin roofs in the blue, green, red and grey seen around town. These are typical styles, not the real look of each building.
 
-**Thadingyut**: candles in front of homes, paper lanterns along the main streets, and strings of lights on the pagoda and clock tower, under a full moon.
+**Thadingyut**: paper lanterns and candles along the main route (Myo Nan → clock tower → ရှမ်းပိုင်းတံတား → သီရိမင်္ဂလာဈေး), strings of lights and candles at the pagodas and clock tower, and candles at a few homes, under a full moon.
 
 Satellite imagery and OSM edits come from different years, so some buildings may no longer stand, or may be missing.
 

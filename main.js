@@ -35,6 +35,8 @@ const moon = new THREE.DirectionalLight(0x9fb4e0, 0);
 scene.add(moon);
 
 // ---------- data ----------
+const loading = $('loading');
+const step = (msg) => { loading.textContent = msg; return new Promise((r) => setTimeout(r, 0)); };
 const data = await (await fetch('data/loikaw.json')).json();
 const T = data.terrain;
 const H = new Float32Array(T.d.length);
@@ -60,6 +62,7 @@ function deckAt(x, z) {
 }
 const X1 = T.x0 + (T.w - 1) * T.step, Z1 = T.z0 + (T.h - 1) * T.step;
 
+await step('Shaping the valley…');
 // ---------- terrain mesh ----------
 {
   const g = new THREE.PlaneGeometry(X1 - T.x0, Z1 - T.z0, T.w - 1, T.h - 1);
@@ -139,6 +142,7 @@ function flatPolys(list, color, lift) {
 flatPolys(data.waterAreas, 0x4f7f95, 0.1);
 flatPolys(data.green, 0x6f9a4c, 0.2);
 
+await step('Building 23,000 houses…');
 // ---------- buildings ----------
 // cheap deterministic random so the town looks the same on every visit
 const rand = (s) => { s = Math.sin(s * 12.9898) * 43758.5453; return s - Math.floor(s); };
@@ -230,20 +234,26 @@ const PAINT = [0xffffff, 0xf3ead8, 0xe9efe9, 0xf2e2c4, 0xdde6ee, 0xf1d9cf, 0xe4e
 const ROOFS = [0x8a4a3a, 0x7a3f30, 0x96563f, 0xa65a3c, 0x83483a, 0x7d2e2a, 0x8a9097, 0x6d7a84, 0x9aa0a6, 0x3f6fa8, 0x4f8a7a];
 
 // main roads, for placing shophouses along them
-const MAIN = new Set();
+const MAIN = new Set(), mkey = (ix, iz) => (ix + 2000) * 8192 + iz + 2000;
 for (const r of data.roads) {
   if (roadRank(r.t) < 5) continue;
   for (let i = 0; i < r.p.length - 2; i += 2) {
     const ax = r.p[i], az = r.p[i + 1], bx = r.p[i + 2], bz = r.p[i + 3], n = Math.ceil(Math.hypot(bx - ax, bz - az) / 5) + 1;
-    for (let s = 0; s <= n; s++) MAIN.add(`${Math.round((ax + (bx - ax) * s / n) / 10)},${Math.round((az + (bz - az) * s / n) / 10)}`);
+    for (let s = 0; s <= n; s++) MAIN.add(mkey(Math.round((ax + (bx - ax) * s / n) / 10), Math.round((az + (bz - az) * s / n) / 10)));
   }
 }
-const nearMain = (x, z) => { for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) if (MAIN.has(`${Math.round(x / 10) + dx},${Math.round(z / 10) + dz}`)) return true; return false; };
+const nearMain = (x, z) => { const ix = Math.round(x / 10), iz = Math.round(z / 10); for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) if (MAIN.has(mkey(ix + dx, iz + dz))) return true; return false; };
 
-const buckets = { walls: STYLE_NAMES.map(() => ({ pos: [], uv: [], col: [] })), roof: { pos: [], uv: [], col: [] }, flat: { pos: [], uv: [], col: [] } };
+const bucket = () => ({ pos: [], nor: [], uv: [], col: [] });
+const buckets = { walls: STYLE_NAMES.map(bucket), roof: bucket(), flat: bucket() };
+// one triangle, with its face normal (plain pushes: spreads are slow over ~300k calls)
 const tri = (B, a, b, c, ua, ub, uc, col) => {
-  B.pos.push(...a, ...b, ...c);
-  B.uv.push(...ua, ...ub, ...uc);
+  B.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2], e2x = c[0] - a[0], e2y = c[1] - a[1], e2z = c[2] - a[2];
+  let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x; const l = Math.hypot(nx, ny, nz) || 1;
+  nx /= l; ny /= l; nz /= l;
+  B.nor.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+  B.uv.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
   B.col.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
 };
 const toLocal = (lat, lon) => [(lon - data.origin[1]) * 111320 * Math.cos(data.origin[0] * Math.PI / 180), -(lat - data.origin[0]) * 110540];
@@ -256,6 +266,9 @@ const MN_W0 = -16.5, MN_W1 = 46, MN_D = 47; // courtyard extent relative to the 
 // သီရိမင်္ဂလာဈေး: the market area from OpenStreetMap; its halls get rows of low blue gable roofs
 const MARKET = [[19.667294, 97.213674], [19.667593, 97.214728], [19.666268, 97.215265], [19.665982, 97.214184]].flatMap(([a, o]) => toLocal(a, o));
 const MARKET_ROOFS = [0x4a7db8, 0x3f6fa8, 0x5a8cc0, 0x6d8fae];
+const MK_X0 = Math.min(...MARKET.filter((_, i) => i % 2 === 0)), MK_X1 = Math.max(...MARKET.filter((_, i) => i % 2 === 0));
+const MK_Z0 = Math.min(...MARKET.filter((_, i) => i % 2)), MK_Z1 = Math.max(...MARKET.filter((_, i) => i % 2));
+const paint = new THREE.Color(), roofC = new THREE.Color(), flatC = new THREE.Color();
 const footprints = []; // for collision
 let estimated = 0;
 const INSTITUTION = new Set(['school', 'hospital', 'university', 'stadium', 'grandstand', 'train_station', 'church', 'college', 'government', 'office', 'commercial']);
@@ -276,7 +289,7 @@ data.buildings.forEach((b, n) => {
   area = Math.abs(area);
 
   let style = 'house', h = b.h;
-  const isMarket = inPoly(cx, cz, MARKET);
+  const isMarket = cx > MK_X0 && cx < MK_X1 && cz > MK_Z0 && cz < MK_Z1 && inPoly(cx, cz, MARKET);
   if (isMarket) { style = 'shop'; if (!h) h = 4.4 + rand(n + 3) * 0.6; }
   else if ((b.s === 'osm' && INSTITUTION.has(b.k)) || area > 1500) style = 'block';
   else if (nearMain(cx, cz) && area < 450) style = 'shop';
@@ -287,8 +300,9 @@ data.buildings.forEach((b, n) => {
     h = floors * 3.2 + 0.4 + rand(n + 3) * 0.4;
   }
   const top = ymin + h, bot = ymin - 0.6;
-  const paint = new THREE.Color(style === 'wood' ? 0xffffff : PAINT[(rand(n + 11) * PAINT.length) | 0]);
-  const roofC = new THREE.Color((isMarket ? MARKET_ROOFS : ROOFS)[(rand(n + 13) * (isMarket ? MARKET_ROOFS : ROOFS).length) | 0]).multiplyScalar(0.85 + rand(n + 14) * 0.3);
+  paint.setHex(style === 'wood' ? 0xffffff : PAINT[(rand(n + 11) * PAINT.length) | 0]);
+  const roofs = isMarket ? MARKET_ROOFS : ROOFS;
+  roofC.setHex(roofs[(rand(n + 13) * roofs.length) | 0]).multiplyScalar(0.85 + rand(n + 14) * 0.3);
 
   // walls: one quad per edge; u fits a whole number of 4 m bays, v climbs the storeys
   const W = buckets.walls[STYLE_NAMES.indexOf(style)];
@@ -336,7 +350,7 @@ data.buildings.forEach((b, n) => {
     tri(buckets.roof, c4, c1, r1, [-Wo / s, 0], [Wo / s, 0], [0, el], roofC);
   } else {
     const contour = []; for (let i = 0; i < m; i++) contour.push(new THREE.Vector2(p[i * 2], p[i * 2 + 1]));
-    const flatC = isMarket ? roofC : new THREE.Color(0xb9b4aa).multiplyScalar(0.85 + rand(n + 15) * 0.2);
+    if (isMarket) flatC.copy(roofC); else flatC.setHex(0xb9b4aa).multiplyScalar(0.85 + rand(n + 15) * 0.2);
     for (const [a, b2, c] of THREE.ShapeUtils.triangulateShape(contour, [])) {
       tri(buckets.flat, [p[a * 2], top, p[a * 2 + 1]], [p[b2 * 2], top, p[b2 * 2 + 1]], [p[c * 2], top, p[c * 2 + 1]], [0, 0], [0, 0], [0, 0], flatC);
     }
@@ -351,7 +365,7 @@ const bucketMesh = (B, mat) => {
   g.setAttribute('position', new THREE.Float32BufferAttribute(B.pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(B.uv, 2));
   g.setAttribute('color', new THREE.Float32BufferAttribute(B.col, 3));
-  g.computeVertexNormals();
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(B.nor, 3));
   scene.add(new THREE.Mesh(g, mat));
 };
 buckets.walls.forEach((B, i) => bucketMesh(B, wallMats[i]));
@@ -695,6 +709,7 @@ const sunDisc = disc(0xfff2c8, 520), moonDisc = disc(0xdfe6ff, 260);
 const headlight = new THREE.SpotLight(0xfff0d0, 0, 140, 0.42, 0.55, 1);
 camera.add(headlight); camera.add(headlight.target); headlight.position.set(0, -0.4, -1.3); headlight.target.position.set(0, -2.5, -20);
 
+await step('Lighting candles…');
 // ---------- Thadingyut: the festival of lights ----------
 // Candles along the front of homes, paper lanterns along the main streets, and strings
 // of lights running down from the pagoda spire and the clock tower. Each flame flickers
@@ -723,33 +738,35 @@ const flameMat = new THREE.ShaderMaterial({
   let seed = 1;
   const put = (x, y, z, c, sz) => { pos.push(x, y, z); col.push(c.r, c.g, c.b); size.push(sz); phase.push(rand(seed++)); };
   const CANDLE = new THREE.Color(0xffb54a), LANTERNS = [0xff5a3c, 0xffc23a, 0xff8a2a, 0x58d06a, 0xff6fb0, 0x6ab4ff].map((h) => new THREE.Color(h));
-  // candles: a row along the longest wall of most homes, and on the windowsill
+  // the festival route: Myo Nan, past the clock tower, south on NH21, over ရှမ်းပိုင်းတံတား to the market
+  const route = [[19.677765, 97.211853], [19.677146, 97.211908], [19.676934, 97.212053], [19.676166, 97.212293], [19.674676, 97.212819], [19.671846, 97.213943], [19.670334, 97.214626], [19.669385, 97.215011], [19.669218, 97.215007], [19.669146, 97.214969], [19.668567, 97.214336], [19.66834, 97.214178], [19.668211, 97.214138], [19.6679, 97.214204], [19.667815, 97.214763], [19.666269, 97.215368], [19.6661, 97.214751]].map(([a, o]) => toLocal(a, o));
+  // paper lanterns on both sides of it, candles along its edges
+  let k = 0;
+  for (let i = 0; i < route.length - 1; i++) {
+    const [ax, az] = route[i], [bx, bz] = route[i + 1], L = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / L, nz = (bx - ax) / L;
+    for (let d = 0; d < L; d += 1.6, k++) {
+      const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L, gy = Math.max(ground(x, z), deckAt(x, z));
+      for (const sd of [-1, 1]) {
+        put(x + nx * 5.8 * sd, gy + 0.15, z + nz * 5.8 * sd, CANDLE, 0.5);
+        if (k % 2 === 0) put(x + nx * 6.5 * sd, gy + 4.6 - Math.sin((k % 8) / 8 * Math.PI) * 0.5, z + nz * 6.5 * sd, LANTERNS[((k / 2) + (sd > 0 ? 3 : 0)) % 6 | 0], 1.3);
+      }
+    }
+  }
+  // a few homes elsewhere with a row of candles out front; more of them along the route
+  const nearRoute = (x, z) => route.some(([rx, rz], i) => i < route.length - 1 && (() => {
+    const [bx, bz] = route[i + 1], L2 = (bx - rx) ** 2 + (bz - rz) ** 2 || 1, t = Math.max(0, Math.min(1, ((x - rx) * (bx - rx) + (z - rz) * (bz - rz)) / L2));
+    return Math.hypot(x - rx - t * (bx - rx), z - rz - t * (bz - rz)) < 40;
+  })());
   footprints.forEach((f, n) => {
-    if (!f.base || rand(n + 61) > 0.7 || f.p.length > 40) return;
+    if (!f.base || f.p.length > 40) return;
+    if (rand(n + 61) > (nearRoute(f.cx, f.cz) ? 0.5 : 0.04)) return;
     const m = f.p.length / 2; let bi = 0, bl = 0;
     for (let i = 0; i < m; i++) { const j = (i + 1) % m, L = Math.hypot(f.p[j * 2] - f.p[i * 2], f.p[j * 2 + 1] - f.p[i * 2 + 1]); if (L > bl) { bl = L; bi = i; } }
     const j = (bi + 1) % m, ax = f.p[bi * 2], az = f.p[bi * 2 + 1], bx = f.p[j * 2], bz = f.p[j * 2 + 1];
     let nx = -(bz - az) / bl, nz = (bx - ax) / bl;
     if (nx * ((ax + bx) / 2 - f.cx) + nz * ((az + bz) / 2 - f.cz) < 0) { nx = -nx; nz = -nz; }
-    for (let d = 0.4; d < bl - 0.3; d += 0.8) {
-      const x = ax + (bx - ax) * d / bl, z = az + (bz - az) * d / bl;
-      put(x + nx * 0.35, ground(x, z) + 0.12, z + nz * 0.35, CANDLE, 0.32);
-      if (rand(seed + 3) < 0.35) put(x + nx * 0.18, f.base + 1.45, z + nz * 0.18, CANDLE, 0.28);
-    }
-    if (rand(n + 62) < 0.45) { const x = (ax + bx) / 2 + nx * 0.9, z = (az + bz) / 2 + nz * 0.9; put(x, f.top - 0.6, z, LANTERNS[(rand(n + 63) * 6) | 0], 1.1); }
+    for (let d = 0.6; d < bl - 0.4; d += 1.2) { const x = ax + (bx - ax) * d / bl, z = az + (bz - az) * d / bl; put(x + nx * 0.35, ground(x, z) + 0.12, z + nz * 0.35, CANDLE, 0.32); }
   });
-  // paper lanterns strung along both sides of the main streets
-  for (const r of data.roads) {
-    if (roadRank(r.t) < 6) continue;
-    const off = (ROAD_W[r.t] ?? 6) / 2 + 1; let k = 0;
-    for (let i = 0; i < r.p.length - 2; i += 2) {
-      const ax = r.p[i], az = r.p[i + 1], bx = r.p[i + 2], bz = r.p[i + 3], L = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / L, nz = (bx - ax) / L;
-      for (let d = 0; d < L; d += 3.2, k++) {
-        const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L, sag = Math.sin((k % 6) / 6 * Math.PI) * 0.5;
-        for (const sd of [-1, 1]) put(x + nx * off * sd, ground(x, z) + 4.6 - sag, z + nz * off * sd, LANTERNS[(k + (sd > 0 ? 3 : 0)) % 6], 0.9);
-      }
-    }
-  }
   // strings of lights from a spire down to a ring around its base
   const strands = (tx, ty, tz, r, by, count, perStrand, colors) => {
     for (let s = 0; s < count; s++) {
@@ -762,6 +779,10 @@ const flameMat = new THREE.ShaderMaterial({
   for (let x = -17; x <= 17; x += 0.9) for (const z of [-9, 9]) put(TKX + x, tkBase + 0.2, TKZ + z, CANDLE, 0.4);
   strands(MN_TOP.x, MN_TOP.top, MN_TOP.z, MN_TOP.rad * 0.9, MN_TOP.base + 0.3, 32, 34, [CANDLE, new THREE.Color(0xfff1c0), LANTERNS[1]]);
   for (let t = 0; t <= BRIDGE.len; t += 1.2) for (const sd of [-1, 1]) { const q = BRIDGE.P(t, sd * BRIDGE.W / 2, BRIDGE.H + 0.4); put(q.x, q.y, q.z, LANTERNS[(t / 1.2 | 0) % 6], 0.6); }
+  { const g0 = ground(MNX, MNZ) + 1.5; // on Myo Nan's courtyard wall
+    for (let x = MN_W0; x <= MN_W1; x += 1.2) for (const z of [-MN_D / 2, MN_D / 2]) if (z < 0 || x < 8 || x > 16) put(MNX + x, g0, MNZ + z, CANDLE, 0.4);
+    for (let z = -MN_D / 2; z <= MN_D / 2; z += 1.2) for (const x of [MN_W0, MN_W1]) put(MNX + x, g0, MNZ + z, CANDLE, 0.4); }
+  for (let a = 0; a < Math.PI * 2; a += 0.04) { const x = TKX + Math.cos(a) * 36, z = TKZ + Math.sin(a) * 25; put(x, ground(x, z) + 0.15, z, CANDLE, 0.45); } // around the foot of Taung Kwe
   const clBase = ground(CLX, CLZ);
   strands(CLX, clBase + 16.5, CLZ, 4.9, clBase + 0.9, 16, 22, LANTERNS);
   const g = new THREE.BufferGeometry();
