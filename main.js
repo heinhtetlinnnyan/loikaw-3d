@@ -269,6 +269,9 @@ const MARKET_ROOFS = [0x4a7db8, 0x3f6fa8, 0x5a8cc0, 0x6d8fae];
 const MK_X0 = Math.min(...MARKET.filter((_, i) => i % 2 === 0)), MK_X1 = Math.max(...MARKET.filter((_, i) => i % 2 === 0));
 const MK_Z0 = Math.min(...MARKET.filter((_, i) => i % 2)), MK_Z1 = Math.max(...MARKET.filter((_, i) => i % 2));
 const paint = new THREE.Color(), roofC = new THREE.Color(), flatC = new THREE.Color();
+// the old home, as seen from its gate: a single-storey house with a low grey tin roof at the
+// back of a yard, behind a grey block wall, with big shady trees and a red-earth driveway
+const OLD_HOME = toLocal(19.66659780912212, 97.21811179202088);
 const footprints = []; // for collision
 let estimated = 0;
 const INSTITUTION = new Set(['school', 'hospital', 'university', 'stadium', 'grandstand', 'train_station', 'church', 'college', 'government', 'office', 'commercial']);
@@ -288,9 +291,11 @@ data.buildings.forEach((b, n) => {
   const order = [...Array(m).keys()]; if (area > 0) order.reverse();
   area = Math.abs(area);
 
-  let style = 'house', h = b.h;
+  let style = 'house', h = b.h, riseK = 0.55;
+  const isOldHome = Math.abs(cx - OLD_HOME[0]) < 12 && Math.abs(cz - OLD_HOME[1]) < 12 && inPoly(OLD_HOME[0], OLD_HOME[1], p);
   const isMarket = cx > MK_X0 && cx < MK_X1 && cz > MK_Z0 && cz < MK_Z1 && inPoly(cx, cz, MARKET);
   if (isMarket) { style = 'shop'; if (!h) h = 4.4 + rand(n + 3) * 0.6; }
+  else if (isOldHome) { h = 3.6; riseK = 0.22; }
   else if ((b.s === 'osm' && INSTITUTION.has(b.k)) || area > 1500) style = 'block';
   else if (nearMain(cx, cz) && area < 450) style = 'shop';
   else if (rand(n + 31) < 0.3) style = 'wood';
@@ -303,6 +308,7 @@ data.buildings.forEach((b, n) => {
   paint.setHex(style === 'wood' ? 0xffffff : PAINT[(rand(n + 11) * PAINT.length) | 0]);
   const roofs = isMarket ? MARKET_ROOFS : ROOFS;
   roofC.setHex(roofs[(rand(n + 13) * roofs.length) | 0]).multiplyScalar(0.85 + rand(n + 14) * 0.3);
+  if (isOldHome) { paint.setHex(0xd6d3cb); roofC.setHex(0x8f949a); }
 
   // walls: one quad per edge; u fits a whole number of 4 m bays, v climbs the storeys
   const W = buckets.walls[STYLE_NAMES.indexOf(style)];
@@ -339,7 +345,7 @@ data.buildings.forEach((b, n) => {
     for (let i = 0; i < 4; i++) { const dx = p[((i + 1) % 4) * 2] - p[i * 2], dz = p[((i + 1) % 4) * 2 + 1] - p[i * 2 + 1], L = Math.hypot(dx, dz); if (L > best) { best = L; ux = dx / L; uz = dz / L; } }
     const vx = -uz, vz = ux;
     let L = 0, Wd = 0; for (let i = 0; i < 4; i++) { const dx = p[i * 2] - cx, dz = p[i * 2 + 1] - cz; L = Math.max(L, Math.abs(dx * ux + dz * uz)); Wd = Math.max(Wd, Math.abs(dx * vx + dz * vz)); }
-    const o = 0.5, Lo = L + o, Wo = Wd + o, rise = Math.min(Wd * 0.55, 3.5), ridge = Math.max(L - Wd, 0) * (rand(n + 41) < 0.35 ? 1.25 : 1);
+    const o = 0.5, Lo = L + o, Wo = Wd + o, rise = Math.min(Wd * riseK, 3.5), ridge = Math.max(L - Wd, 0) * (rand(n + 41) < 0.35 ? 1.25 : 1);
     const P = (a, b, y) => [cx + ux * a + vx * b, y, cz + uz * a + vz * b];
     const c1 = P(-Lo, -Wo, top), c2 = P(Lo, -Wo, top), c3 = P(Lo, Wo, top), c4 = P(-Lo, Wo, top);
     const r1 = P(-Math.min(ridge, Lo), 0, top + rise), r2 = P(Math.min(ridge, Lo), 0, top + rise);
@@ -573,6 +579,7 @@ const LANDMARKS = [
   ['သီရိမင်္ဂလာဈေး', null, 19.666788, 97.21447, 0],
   ['ဝိုင်းဘို အိမ်', null, 19.672848670108113, 97.21654757553394, -4],
   ['စာကလေးအိမ်', null, 19.678373431914633, 97.20811068678618, -4],
+  ['Old home', 'အိမ်ဟောင်း', 19.66659780912212, 97.21811179202088, -4],
   ['HiFi ခွေငှားဆိုင်', 'HiFi video rental', 19.669536878688188, 97.21483766712618, -6],
   ['နဝဒေး ခွေငှားဆိုင်', 'Nawaday video rental', 19.669648640922983, 97.21502139844692, -2],
 ];
@@ -588,6 +595,30 @@ const MEMORY_LANE = (() => {
 })();
 ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 3.4, () => 0xb8743c, () => 0.42, 4);
 ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 1.3, () => 0xe2b26a, () => 0.48, 5);
+
+// the old home's yard: wall with an open gateway toward the track to the west, red-earth
+// driveway to the front of the house, and big rain trees
+{
+  const [hx, hz] = OLD_HOME, x0 = hx - 15.5, x1 = hx + 18, z0 = hz - 17, z1 = hz + 18, gz = hz + 10.5, gw = 4;
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0x9d9a93 }), gy = (x, z) => ground(x, z);
+  const wall = (ax, az, bx, bz) => {
+    const L = Math.hypot(bx - ax, bz - az), m = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.7, L), wallMat);
+    m.position.set((ax + bx) / 2, gy((ax + bx) / 2, (az + bz) / 2) + 0.75, (az + bz) / 2); m.rotation.y = Math.atan2(bx - ax, bz - az); scene.add(m);
+  };
+  wall(x0, z0, x1, z0); wall(x1, z0, x1, z1); wall(x1, z1, x0, z1); wall(x0, z1, x0, gz + gw / 2); wall(x0, gz - gw / 2, x0, z0);
+  for (const pz of [gz - gw / 2, gz + gw / 2]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.1, 0.5), wallMat); post.position.set(x0, gy(x0, pz) + 0.95, pz); scene.add(post); }
+  ribbonMesh([{ p: [x0 - 2, gz, hx - 4, gz, hx - 4, hz + 6.2] }], () => 3.4, () => 0xa4623e, () => 0.3, 3);
+  const bark = new THREE.MeshLambertMaterial({ color: 0x4a3a2c }), leaves = new THREE.MeshLambertMaterial({ color: 0x3f5a2e, flatShading: true });
+  const tree = (x, z, sz, seed) => {
+    const y = gy(x, z), trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25 * sz, 0.4 * sz, 5 * sz, 7), bark);
+    trunk.position.set(x, y + 2.5 * sz, z); scene.add(trunk);
+    for (let i = 0; i < 5; i++) {
+      const a = i / 5 * Math.PI * 2 + seed, r = i ? 2.6 * sz : 0, c = new THREE.Mesh(new THREE.IcosahedronGeometry((2.6 + rand(seed + i) * 1.2) * sz, 1), leaves);
+      c.position.set(x + Math.cos(a) * r, y + (5.2 + rand(seed + i * 3) * 1.4) * sz, z + Math.sin(a) * r); c.scale.y = 0.7; scene.add(c);
+    }
+  };
+  tree(x0 + 4, gz - 7, 1.5, 1); tree(x0 - 3, gz + 6, 1.2, 2); tree(hx + 9, hz - 9, 1.3, 3); tree(hx + 12, hz + 12, 1.1, 4);
+}
 
 // ရှမ်းပိုင်းတံတား, also called ဂျပန်တံတား, carrying NH21 over the Balu Chaung: a steel Warren truss
 // on the western of the two spans, which is where the bridge was pointed out
@@ -815,6 +846,9 @@ laneFlames.uniforms.map.value = glowTex; // share the texture instead of an unup
     }
     run += L;
   }
+  // the old home: a candle on each gate post and a porch light, every night
+  { const [hx, hz] = OLD_HOME, x0 = hx - 15.5, gz = hz + 10.5;
+    for (const [x, z, y, sz] of [[x0, gz - 2, 2.15, 0.6], [x0, gz + 2, 2.15, 0.6], [hx - 4, hz + 6.3, 2.6, 1.4]]) { pos.push(x, ground(x, z) + y, z); col.push(warm.r, warm.g, warm.b); size.push(sz); phase.push(rand(x + z)); } }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
