@@ -251,6 +251,9 @@ const [CLX, CLZ] = toLocal(19.67717, 97.21201);
 // Myo Nan Pagoda's platform is in the satellite footprints; it's drawn as a pagoda instead of a house
 const [MNX, MNZ] = toLocal(19.677785, 97.211291);
 let myoNanPlatform = null;
+// သီရိမင်္ဂလာဈေး: the market area from OpenStreetMap; its halls get rows of low blue gable roofs
+const MARKET = [[19.667294, 97.213674], [19.667593, 97.214728], [19.666268, 97.215265], [19.665982, 97.214184]].flatMap(([a, o]) => toLocal(a, o));
+const MARKET_ROOFS = [0x4a7db8, 0x3f6fa8, 0x5a8cc0, 0x6d8fae];
 const footprints = []; // for collision
 let estimated = 0;
 const INSTITUTION = new Set(['school', 'hospital', 'university', 'stadium', 'grandstand', 'train_station', 'church', 'college', 'government', 'office', 'commercial']);
@@ -271,7 +274,9 @@ data.buildings.forEach((b, n) => {
   area = Math.abs(area);
 
   let style = 'house', h = b.h;
-  if ((b.s === 'osm' && INSTITUTION.has(b.k)) || area > 1500) style = 'block';
+  const isMarket = inPoly(cx, cz, MARKET);
+  if (isMarket) { style = 'shop'; if (!h) h = 4.4 + rand(n + 3) * 0.6; }
+  else if ((b.s === 'osm' && INSTITUTION.has(b.k)) || area > 1500) style = 'block';
   else if (nearMain(cx, cz) && area < 450) style = 'shop';
   else if (rand(n + 31) < 0.3) style = 'wood';
   if (!h) {
@@ -281,7 +286,7 @@ data.buildings.forEach((b, n) => {
   }
   const top = ymin + h, bot = ymin - 0.6;
   const paint = new THREE.Color(style === 'wood' ? 0xffffff : PAINT[(rand(n + 11) * PAINT.length) | 0]);
-  const roofC = new THREE.Color(ROOFS[(rand(n + 13) * ROOFS.length) | 0]).multiplyScalar(0.85 + rand(n + 14) * 0.3);
+  const roofC = new THREE.Color((isMarket ? MARKET_ROOFS : ROOFS)[(rand(n + 13) * (isMarket ? MARKET_ROOFS : ROOFS).length) | 0]).multiplyScalar(0.85 + rand(n + 14) * 0.3);
 
   // walls: one quad per edge; u fits a whole number of 4 m bays, v climbs the storeys
   const W = buckets.walls[STYLE_NAMES.indexOf(style)];
@@ -296,7 +301,23 @@ data.buildings.forEach((b, n) => {
   }
 
   // roof: a hipped tin roof on four-cornered buildings, flat concrete otherwise
-  if (m === 4 && style !== 'block' && area < 900) {
+  if (isMarket && m === 4) {
+    // market hall: several low gables side by side, ridges along the long axis
+    let best = 0, ux = 1, uz = 0;
+    for (let i = 0; i < 4; i++) { const dx = p[((i + 1) % 4) * 2] - p[i * 2], dz = p[((i + 1) % 4) * 2 + 1] - p[i * 2 + 1], L = Math.hypot(dx, dz); if (L > best) { best = L; ux = dx / L; uz = dz / L; } }
+    const vx = -uz, vz = ux;
+    let L = 0, Wd = 0; for (let i = 0; i < 4; i++) { const dx = p[i * 2] - cx, dz = p[i * 2 + 1] - cz; L = Math.max(L, Math.abs(dx * ux + dz * uz)); Wd = Math.max(Wd, Math.abs(dx * vx + dz * vz)); }
+    const Lo = L + 0.6, Wo = Wd + 0.6, bays = Math.max(1, Math.round(2 * Wo / 11)), bw = 2 * Wo / bays, rise = Math.min(bw * 0.2, 2), s = 1.6;
+    const P = (a, b2, y) => [cx + ux * a + vx * b2, y, cz + uz * a + vz * b2];
+    for (let k = 0; k < bays; k++) {
+      const v0 = -Wo + k * bw, vc = v0 + bw / 2, v1 = v0 + bw, sl = Math.hypot(bw / 2, rise) / s;
+      for (const [va, vb] of [[v0, vc], [v1, vc]]) {
+        const a1 = P(-Lo, va, top), a2 = P(Lo, va, top), r2 = P(Lo, vb, top + rise), r1 = P(-Lo, vb, top + rise);
+        tri(buckets.roof, a1, a2, r2, [-Lo / s, 0], [Lo / s, 0], [Lo / s, sl], roofC); tri(buckets.roof, a1, r2, r1, [-Lo / s, 0], [Lo / s, sl], [-Lo / s, sl], roofC);
+      }
+      for (const e of [-L, L]) tri(buckets.roof, P(e, v0, top), P(e, v1, top), P(e, vc, top + rise), [0, 0], [bw / s, 0], [bw / 2 / s, rise / s], roofC);
+    }
+  } else if (m === 4 && style !== 'block' && area < 900) {
     // fit a rectangle: long axis from the longest edge
     let best = 0, ux = 1, uz = 0;
     for (let i = 0; i < 4; i++) { const dx = p[((i + 1) % 4) * 2] - p[i * 2], dz = p[((i + 1) % 4) * 2 + 1] - p[i * 2 + 1], L = Math.hypot(dx, dz); if (L > best) { best = L; ux = dx / L; uz = dz / L; } }
@@ -313,7 +334,7 @@ data.buildings.forEach((b, n) => {
     tri(buckets.roof, c4, c1, r1, [-Wo / s, 0], [Wo / s, 0], [0, el], roofC);
   } else {
     const contour = []; for (let i = 0; i < m; i++) contour.push(new THREE.Vector2(p[i * 2], p[i * 2 + 1]));
-    const flatC = new THREE.Color(0xb9b4aa).multiplyScalar(0.85 + rand(n + 15) * 0.2);
+    const flatC = isMarket ? roofC : new THREE.Color(0xb9b4aa).multiplyScalar(0.85 + rand(n + 15) * 0.2);
     for (const [a, b2, c] of THREE.ShapeUtils.triangulateShape(contour, [])) {
       tri(buckets.flat, [p[a * 2], top, p[a * 2 + 1]], [p[b2 * 2], top, p[b2 * 2 + 1]], [p[c * 2], top, p[c * 2 + 1]], [0, 0], [0, 0], [0, 0], flatC);
     }
@@ -498,6 +519,7 @@ function label(text, sub, x, z, big) {
 }
 for (const p of data.places) {
   if (p.k === 'city') continue;
+  if (p.n === 'Market') continue; // labelled as သီရိမင်္ဂလာဈေး below
   const l = label(p.n, p.my && p.my !== p.n ? p.my : null, p.x, p.z, false);
   if (p.n === 'Myo Nan Pagoda') l.position.set(MN_TOP.x, MN_TOP.top + 6, MN_TOP.z);
 }
@@ -517,13 +539,21 @@ const LANDMARKS = [
   ['BEHS No. 7', 'အထက ၇', 19.6744, 97.22025, 0],
   ['BEHS No. 1', 'အထက ၁', 19.676334437488862, 97.2142472032823, 0],
   ['BEHS No. 2', 'အထက ၂', 19.68586827132356, 97.20741829923378, 0],
-  ['Iron Bridge (Japanese Bridge)', 'သံတံတား (ဂျပန်တံတား)', 19.668754950575565, 97.21451005967769, 4],
+  ['ရှမ်းပိုင်းတံတား', 'ဂျပန်တံတား', 19.668754950575565, 97.21451005967769, 4],
+  ['သီရိမင်္ဂလာဈေး', null, 19.666788, 97.21447, 0],
+  ['ဝိုင်းဘို အိမ်', null, 19.672848670108113, 97.21654757553394, -4],
   ['HiFi ခွေငှားဆိုင်', 'HiFi video rental', 19.669536878688188, 97.21483766712618, -6],
   ['နဝဒေး ခွေငှားဆိုင်', 'Nawaday video rental', 19.669648640922983, 97.21502139844692, -2],
 ];
 for (const [en, my, lat, lon, dy] of LANDMARKS) { const [x, z] = toLocal(lat, lon); label(en, my, x, z, false).position.y += dy; }
 
-// the iron bridge (ဂျပန်တံတား) carrying NH21 over the Balu Chaung: a steel Warren truss
+// a short lane that holds a lot of history for someone who grew up here:
+// warm golden paving, and candles on both sides every night
+const MEMORY_LANE = [toLocal(19.672343539514642, 97.21711620384794), toLocal(19.671287811452522, 97.2174005180052)];
+ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 5.4, () => 0xb8743c, () => 0.42, 4);
+ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 2.2, () => 0xe2b26a, () => 0.48, 5);
+
+// ရှမ်းပိုင်းတံတား, also called ဂျပန်တံတား, carrying NH21 over the Balu Chaung: a steel Warren truss
 // on the western of the two spans, which is where the bridge was pointed out
 const BRIDGE = (() => {
   const [ax, az] = toLocal(19.66834, 97.214178), [bx, bz] = toLocal(19.669146, 97.214969);
@@ -721,6 +751,33 @@ const flameMat = new THREE.ShaderMaterial({
   const pts = new THREE.Points(g, flameMat); pts.frustumCulled = false; scene.add(pts);
   console.info(`Thadingyut: ${pos.length / 3} lights`);
 }
+// candles along the memory lane: lit every night, festival or not
+const laneFlames = flameMat.clone();
+laneFlames.uniforms.map.value = glowTex; // share the texture instead of an unuploaded copy
+{
+  const [[ax, az], [bx, bz]] = MEMORY_LANE, L = Math.hypot(bx - ax, bz - az), nx = -(bz - az) / L, nz = (bx - ax) / L;
+  const pos = [], col = [], size = [], phase = [], warm = new THREE.Color(0xffb54a), soft = new THREE.Color(0xffd9a0);
+  for (let d = 0; d <= L; d += 1.1) {
+    const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L;
+    for (const sd of [-1, 1]) {
+      const cx = x + nx * sd * 2.9, cz = z + nz * sd * 2.9, c = rand(d * 7 + sd) < 0.2 ? soft : warm;
+      pos.push(cx, ground(cx, cz) + 0.55, cz); col.push(c.r, c.g, c.b); size.push(0.6); phase.push(rand(d * 13 + sd * 5));
+    }
+  }
+  // paper lanterns overhead every 8 m, alternating warm colours
+  const lanterns = [0xff7a3c, 0xffc23a, 0xff5a7a].map((h) => new THREE.Color(h));
+  for (let d = 4, k = 0; d < L; d += 8, k++) {
+    const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L, c = lanterns[k % 3];
+    pos.push(x, ground(x, z) + 4.2, z); col.push(c.r, c.g, c.b); size.push(1.3); phase.push(rand(k + 99));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('size', new THREE.Float32BufferAttribute(size, 1));
+  g.setAttribute('phase', new THREE.Float32BufferAttribute(phase, 1));
+  const pts = new THREE.Points(g, laneFlames); pts.frustumCulled = false; scene.add(pts);
+}
+
 // on by default during the three Thadingyut holidays (24-27 October 2026 here)
 const mmNow = new Date(Date.now() + 6.5 * 3600e3);
 let festival = mmNow.getUTCFullYear() === 2026 && mmNow.getUTCMonth() === 9 && mmNow.getUTCDate() >= 24 && mmNow.getUTCDate() <= 27;
@@ -754,6 +811,7 @@ function setTime(h) {
   moonDisc.material.opacity = smooth(0.5, 0.9, night);
   moonDisc.scale.setScalar(festival ? 420 : 260); // the Thadingyut full moon
   flameMat.uniforms.opacity.value = festival ? smooth(0.25, 0.7, night) : 0;
+  laneFlames.uniforms.opacity.value = 0.25 + 0.75 * smooth(0.2, 0.7, night);
 }
 // Loikaw is UTC+6:30; start at the time it is there right now
 const nowMM = new Date(Date.now() + 6.5 * 3600e3);
@@ -780,6 +838,7 @@ const player = { x: CLX, z: CLZ + 16, y: 0, vy: 0, yaw: 0, pitch: 0, speed: 0, m
 player.y = ground(player.x, player.z);
 const keys = new Set();
 let started = false, mapBig = false;
+if (location.hostname === 'localhost') window.__loikaw = { player, toLocal, ground }; // for testing camera spots locally
 
 function setMode(m) {
   const prev = player.mode; player.mode = m;
@@ -1050,7 +1109,7 @@ function tick() {
   }
   engineUpdate(M.ride && fwd > 0 ? 1 : 0);
   if (timeFlows) { hour = (hour + dt / 30) % 24; showTime(); } // one hour every 30 s
-  flameMat.uniforms.time.value = clock.elapsedTime;
+  flameMat.uniforms.time.value = laneFlames.uniforms.time.value = clock.elapsedTime;
   sunDisc.position.copy(camera.position).addScaledVector(sunDir, 4500);
   moonDisc.position.copy(camera.position).addScaledVector(sunDir, -4500).setY(camera.position.y + 2200);
   stars.position.copy(camera.position);
@@ -1061,7 +1120,7 @@ function tick() {
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); flameMat.uniforms.scale.value = innerHeight / 2; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (started) sizeMap(); });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); flameMat.uniforms.scale.value = laneFlames.uniforms.scale.value = innerHeight / 2; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (started) sizeMap(); });
 new ResizeObserver(() => started && sizeMap()).observe(mm);
 console.info(`Loikaw 3D: ${footprints.length} buildings (${estimated} with estimated height), ${data.roads.length} roads`);
 requestAnimationFrame(tick);
