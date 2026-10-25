@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Loikaw 3D</title>
+<meta name="description" content="Walk, cycle or fly around Loikaw, Kayah State, Myanmar, built from OpenStreetMap data.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Noto+Sans+Myanmar:wght@400;600&family=Work+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="intro" class="panel intro">
+  <p class="eyebrow">Kayah State · Myanmar · 19.67° N 97.21° E</p>
+  <h1>Loikaw <span lang="my">လွိုင်ကော်</span></h1>
+  <p class="lede">The town in the valley of the Balu Chaung, rebuilt from OpenStreetMap streets, satellite-traced buildings and 30&nbsp;m terrain. Pick how you want to get around.</p>
+  <div class="modes" role="radiogroup" aria-label="Travel mode">
+    <button class="mode" data-mode="walk" id="m-walk"><b>Walk</b><span>5 km/h · Shift to run</span></button>
+    <button class="mode" data-mode="bike" id="m-bike"><b>Bicycle</b><span>18 km/h · coast and lean</span></button>
+    <button class="mode" data-mode="fly" id="m-fly"><b>Fly</b><span>Space up · C down</span></button>
+  </div>
+  <p class="keys">WASD or arrows to move · mouse to look · 1 2 3 switch mode · M map · Esc pause</p>
+  <p id="loading" class="loading">Loading the town…</p>
+</div>
+
+<div id="hud" class="hud" hidden>
+  <div class="where panel">
+    <span id="street" class="street">—</span>
+    <span id="meta" class="meta"></span>
+  </div>
+  <div class="mode-pills panel">
+    <button data-mode="walk" class="pill" id="p-walk">Walk</button>
+    <button data-mode="bike" class="pill" id="p-bike">Bike</button>
+    <button data-mode="fly" class="pill" id="p-fly">Fly</button>
+  </div>
+  <canvas id="minimap" class="minimap panel" width="220" height="220" aria-label="Map. Click to jump there."></canvas>
+  <p class="credit">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · buildings also from <a href="https://github.com/microsoft/GlobalMLBuildingFootprints" target="_blank" rel="noopener">Microsoft Building Footprints</a> (ODbL) · terrain: Mapzen/AWS Terrain Tiles</p>
+</div>
+
+<div id="touch" class="touch" hidden>
+  <div id="stick" class="stick"><div id="knob" class="knob"></div></div>
+  <button id="t-up" class="tbtn">▲</button>
+  <button id="t-down" class="tbtn">▼</button>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
