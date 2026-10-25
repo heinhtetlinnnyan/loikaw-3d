@@ -131,81 +131,263 @@ flatPolys(data.waterAreas, 0x4f7f95, 0.1);
 flatPolys(data.green, 0x6f9a4c, 0.2);
 
 // ---------- buildings ----------
-// cheap deterministic random so heights don't change between visits
+// cheap deterministic random so the town looks the same on every visit
 const rand = (s) => { s = Math.sin(s * 12.9898) * 43758.5453; return s - Math.floor(s); };
-const WALLS = [0xe8e0d0, 0xdcd3c2, 0xf0ebe0, 0xcfd6d4, 0xe6d6bc, 0xd9c7b0];
-const ROOFS = [0x8b4a3a, 0x7a7f86, 0x9a5b45, 0x6f747a, 0xa86a4c, 0x5f6b72];
-const bgeo = [];
-const footprints = []; // for collision + picking
-let estimated = 0;
-data.buildings.forEach((b, n) => {
-  const pts = []; let ymin = Infinity, cx = 0, cz = 0;
-  for (let i = 0; i < b.p.length; i += 2) { pts.push(new THREE.Vector2(b.p[i], -b.p[i + 1])); ymin = Math.min(ymin, ground(b.p[i], b.p[i + 1])); cx += b.p[i]; cz += b.p[i + 1]; }
-  if (pts.length < 3) return;
-  cx /= pts.length; cz /= pts.length;
-  let h = b.h;
-  if (!h) { estimated++; h = 3.4 + Math.floor(rand(n + 1) * 2.2) * 3.2 * (rand(n + 7) > 0.75 ? 1 : 0.0) + rand(n + 3) * 1.2; }
-  const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: h + 0.6, bevelEnabled: false });
-  g.rotateX(-Math.PI / 2);
-  g.translate(0, ymin - 0.6, 0);
-  const wall = new THREE.Color(WALLS[(rand(n + 11) * WALLS.length) | 0]);
-  const roof = new THREE.Color(ROOFS[(rand(n + 13) * ROOFS.length) | 0]);
-  if (b.s === 'osm' && b.k && b.k !== 'yes') wall.lerp(new THREE.Color(0xf3e2b3), 0.5);
-  const nor = g.attributes.normal, col = new Float32Array(nor.count * 3);
-  for (let k = 0; k < nor.count; k++) { const c = nor.getY(k) > 0.5 ? roof : wall; col.set([c.r, c.g, c.b], k * 3); }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  g.deleteAttribute('uv');
-  bgeo.push(g);
-  let r = 0; for (let i = 0; i < b.p.length; i += 2) r = Math.max(r, Math.hypot(b.p[i] - cx, b.p[i + 1] - cz));
-  footprints.push({ p: b.p, cx, cz, r, top: ymin + h, base: ymin, name: b.n, kind: b.k });
-});
-for (let i = 0; i < bgeo.length; i += 2000) {
-  const g = mergeGeometries(bgeo.slice(i, i + 2000));
-  scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })));
-}
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-// ---------- Taung Kwe Pagoda: gilded stupas on a split limestone rock ----------
+// Facade textures, painted on canvases. One tile = 4 m wide x 7 m tall:
+// a 0.6 m plinth, then two 3.2 m storeys. Taller buildings repeat it.
+// Each style also gets an "emissive" twin where some window panes glow at night.
+const TILE_W = 4, TILE_H = 7;
+function facade(draw) {
+  const W = 256, H = 448, px = W / TILE_W; // 64 px per metre
+  const day = document.createElement('canvas'), nightC = document.createElement('canvas');
+  day.width = nightC.width = W; day.height = nightC.height = H;
+  const d = day.getContext('2d'), n = nightC.getContext('2d');
+  n.fillStyle = '#000'; n.fillRect(0, 0, W, H);
+  // y in metres from the bottom of the tile
+  const R = (x, y, w, h) => [x * px, H - (y + h) * px, w * px, h * px];
+  let lit = 0;
+  const api = {
+    fill(c, x, y, w, h) { d.fillStyle = c; d.fillRect(...R(x, y, w, h)); },
+    window(x, y, w, h, frame, glass, bars) {
+      api.fill(frame, x - 0.08, y - 0.08, w + 0.16, h + 0.16);
+      api.fill(glass, x, y, w, h);
+      api.fill('rgba(255,255,255,.18)', x, y + h * 0.55, w, h * 0.12);
+      if (bars) for (let i = 1; i < 5; i++) api.fill('rgba(30,30,30,.55)', x + w * i / 5 - 0.02, y, 0.04, h);
+      api.fill(frame, x + w / 2 - 0.03, y, 0.06, h);
+      if (rand(++lit * 7.1) > 0.45) { n.fillStyle = '#ffcf8a'; n.fillRect(...R(x, y, w, h)); }
+    },
+    shutters(x, y, w, h, c) { api.fill(c, x - 0.42, y, 0.38, h); api.fill(c, x + w + 0.04, y, 0.38, h); for (let i = 0; i < 6; i++) { api.fill('rgba(0,0,0,.18)', x - 0.42, y + h * i / 6, 0.38, 0.03); api.fill('rgba(0,0,0,.18)', x + w + 0.04, y + h * i / 6, 0.38, 0.03); } },
+    noise(alpha) { for (let i = 0; i < 2500; i++) { const v = (Math.random() * 60) | 0; d.fillStyle = `rgba(${v},${v},${v},${alpha})`; d.fillRect(Math.random() * W, Math.random() * H, 2, 2); } },
+    ctx: d,
+  };
+  draw(api);
+  const tex = (c) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = maxAniso; t.colorSpace = THREE.SRGBColorSpace; return t; };
+  return { map: tex(day), emissiveMap: tex(nightC) };
+}
+const FACADES = {
+  // painted plaster house: door and barred window below, two windows above
+  house: facade((f) => {
+    f.fill('#f4f1ea', 0, 0, 4, 7); f.noise(0.05);
+    f.fill('#9a958c', 0, 0, 4, 0.6);
+    f.fill('#6b4a2e', 0.5, 0.6, 1.0, 2.2); f.fill('#5a3d25', 0.55, 0.65, 0.42, 2.1); f.fill('#5a3d25', 1.03, 0.65, 0.42, 2.1);
+    f.window(2.3, 1.5, 1.1, 1.1, '#e8e4dc', '#3b4a55', true); f.shutters(2.3, 1.5, 1.1, 1.1, '#3f7f9a');
+    f.fill('#d9d4ca', 0, 3.75, 4, 0.12);
+    f.window(0.7, 4.6, 1.0, 1.2, '#e8e4dc', '#3b4a55', false); f.window(2.4, 4.6, 1.0, 1.2, '#e8e4dc', '#3b4a55', false);
+  }),
+  // shophouse: rolling steel shutter and signboard, balcony and windows above
+  shop: facade((f) => {
+    f.fill('#f2efe8', 0, 0, 4, 7); f.noise(0.05);
+    f.fill('#8c8780', 0, 0, 4, 0.6);
+    f.fill('#a7aaad', 0.25, 0.6, 3.5, 2.5);
+    for (let y = 0.6; y < 3.1; y += 0.09) f.fill('rgba(60,60,60,.35)', 0.25, y, 3.5, 0.025);
+    f.fill('#2d5fa0', 0.1, 3.1, 3.8, 0.55);
+    for (let i = 0; i < 5; i++) f.fill('rgba(255,255,255,.85)', 0.4 + i * 0.68, 3.28, 0.45, 0.18);
+    f.window(0.5, 4.5, 1.2, 1.4, '#e3dfd6', '#34434e', false); f.window(2.3, 4.5, 1.2, 1.4, '#e3dfd6', '#34434e', false);
+    f.fill('#5f6366', 0.2, 4.2, 3.6, 0.08); for (let x = 0.25; x < 3.8; x += 0.18) f.fill('#5f6366', x, 4.2, 0.03, 0.8); f.fill('#5f6366', 0.2, 4.95, 3.6, 0.06);
+  }),
+  // teak plank house with shuttered windows
+  wood: facade((f) => {
+    f.fill('#a7744a', 0, 0, 4, 7);
+    for (let y = 0; y < 7; y += 0.22) { f.fill(`rgba(${60 + (Math.random() * 30) | 0},35,15,.25)`, 0, y, 4, 0.2); f.fill('rgba(40,22,10,.55)', 0, y, 4, 0.025); }
+    f.fill('#5d564c', 0, 0, 4, 0.6);
+    f.window(1.4, 1.4, 1.1, 1.0, '#6e4528', '#2c2a26', true); f.shutters(1.4, 1.4, 1.1, 1.0, '#7d5232');
+    f.window(1.4, 4.6, 1.1, 1.0, '#6e4528', '#2c2a26', false); f.shutters(1.4, 4.6, 1.1, 1.0, '#7d5232');
+  }),
+  // concrete institutional block: bands of windows on every floor
+  block: facade((f) => {
+    f.fill('#ece6d6', 0, 0, 4, 7); f.noise(0.04);
+    f.fill('#9e978a', 0, 0, 4, 0.6);
+    f.fill('#d8cfbb', 0, 3.6, 4, 0.25);
+    for (const y of [1.3, 4.5]) { f.window(0.4, y, 1.3, 1.5, '#cfc8b8', '#3e5260', false); f.window(2.3, y, 1.3, 1.5, '#cfc8b8', '#3e5260', false); }
+  }),
+};
+const STYLE_NAMES = Object.keys(FACADES);
+const wallMats = STYLE_NAMES.map((k) => new THREE.MeshLambertMaterial({ map: FACADES[k].map, emissiveMap: FACADES[k].emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true }));
+// corrugated metal sheet for pitched roofs, plain concrete for flat ones
+const corrugated = (() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64; const x = c.getContext('2d');
+  for (let i = 0; i < 64; i++) { const v = 200 + 55 * Math.sin(i / 64 * Math.PI * 8); x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(i, 0, 1, 64); }
+  x.fillStyle = 'rgba(0,0,0,.12)'; x.fillRect(0, 62, 64, 2);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = maxAniso; t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+const roofMat = new THREE.MeshLambertMaterial({ map: corrugated, vertexColors: true, side: THREE.DoubleSide });
+const flatRoofMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+
+// paint and roof colours seen in photos of Loikaw: lots of blue, green and rusty-red tin roofs
+const PAINT = [0xffffff, 0xf3ead8, 0xe9efe9, 0xf2e2c4, 0xdde6ee, 0xf1d9cf, 0xe4ecd2];
+const ROOFS = [0x3f6fa8, 0x3d8a6a, 0x9a4a35, 0x8a9097, 0x7d2e2a, 0x4f8f95, 0xa65a3c, 0x6d7a84];
+
+// main roads, for placing shophouses along them
+const MAIN = new Set();
+for (const r of data.roads) {
+  if (roadRank(r.t) < 5) continue;
+  for (let i = 0; i < r.p.length - 2; i += 2) {
+    const ax = r.p[i], az = r.p[i + 1], bx = r.p[i + 2], bz = r.p[i + 3], n = Math.ceil(Math.hypot(bx - ax, bz - az) / 5) + 1;
+    for (let s = 0; s <= n; s++) MAIN.add(`${Math.round((ax + (bx - ax) * s / n) / 10)},${Math.round((az + (bz - az) * s / n) / 10)}`);
+  }
+}
+const nearMain = (x, z) => { for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) if (MAIN.has(`${Math.round(x / 10) + dx},${Math.round(z / 10) + dz}`)) return true; return false; };
+
+const buckets = { walls: STYLE_NAMES.map(() => ({ pos: [], uv: [], col: [] })), roof: { pos: [], uv: [], col: [] }, flat: { pos: [], uv: [], col: [] } };
+const tri = (B, a, b, c, ua, ub, uc, col) => {
+  B.pos.push(...a, ...b, ...c);
+  B.uv.push(...ua, ...ub, ...uc);
+  B.col.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
+};
 const toLocal = (lat, lon) => [(lon - data.origin[1]) * 111320 * Math.cos(data.origin[0] * Math.PI / 180), -(lat - data.origin[0]) * 110540];
+// the clock tower stands on a roundabout: keep satellite-traced footprints off it
+const [CLX, CLZ] = toLocal(19.67717, 97.21201);
+const footprints = []; // for collision
+let estimated = 0;
+const INSTITUTION = new Set(['school', 'hospital', 'university', 'stadium', 'grandstand', 'train_station', 'church', 'college', 'government', 'office', 'commercial']);
+
+data.buildings.forEach((b, n) => {
+  const p = b.p, m = p.length / 2;
+  if (m < 3) return;
+  let ymin = Infinity, cx = 0, cz = 0, area = 0;
+  for (let i = 0; i < m; i++) {
+    const x = p[i * 2], z = p[i * 2 + 1], x2 = p[((i + 1) % m) * 2], z2 = p[((i + 1) % m) * 2 + 1];
+    ymin = Math.min(ymin, ground(x, z)); cx += x; cz += z; area += x * z2 - x2 * z;
+  }
+  cx /= m; cz /= m; area /= 2;
+  if (Math.hypot(cx - CLX, cz - CLZ) < 9) return;
+  // walls must wind so their faces point outwards
+  const order = [...Array(m).keys()]; if (area > 0) order.reverse();
+  area = Math.abs(area);
+
+  let style = 'house', h = b.h;
+  if ((b.s === 'osm' && INSTITUTION.has(b.k)) || area > 1500) style = 'block';
+  else if (nearMain(cx, cz) && area < 450) style = 'shop';
+  else if (rand(n + 31) < 0.3) style = 'wood';
+  if (!h) {
+    estimated++;
+    const floors = style === 'shop' ? (rand(n + 1) < 0.6 ? 2 : 3) : style === 'block' ? 2 + (rand(n + 1) * 2 | 0) : rand(n + 1) < 0.22 ? 2 : 1;
+    h = floors * 3.2 + 0.4 + rand(n + 3) * 0.4;
+  }
+  const top = ymin + h, bot = ymin - 0.6;
+  const paint = new THREE.Color(style === 'wood' ? 0xffffff : PAINT[(rand(n + 11) * PAINT.length) | 0]);
+  const roofC = new THREE.Color(ROOFS[(rand(n + 13) * ROOFS.length) | 0]).multiplyScalar(0.85 + rand(n + 14) * 0.3);
+
+  // walls: one quad per edge; u fits a whole number of 4 m bays, v climbs the storeys
+  const W = buckets.walls[STYLE_NAMES.indexOf(style)];
+  for (let k = 0; k < m; k++) {
+    const i = order[k], j = order[(k + 1) % m];
+    const ax = p[i * 2], az = p[i * 2 + 1], bx = p[j * 2], bz = p[j * 2 + 1];
+    const len = Math.hypot(bx - ax, bz - az); if (len < 0.2) continue;
+    const u1 = Math.max(1, Math.round(len / TILE_W)) * (len < 2.5 ? 0.5 : 1), v1 = (top - bot) / TILE_H;
+    const A0 = [ax, bot, az], B0 = [bx, bot, bz], B1 = [bx, top, bz], A1 = [ax, top, az];
+    tri(W, A0, B0, B1, [0, 0], [u1, 0], [u1, v1], paint);
+    tri(W, A0, B1, A1, [0, 0], [u1, v1], [0, v1], paint);
+  }
+
+  // roof: a hipped tin roof on four-cornered buildings, flat concrete otherwise
+  if (m === 4 && style !== 'block' && area < 900) {
+    // fit a rectangle: long axis from the longest edge
+    let best = 0, ux = 1, uz = 0;
+    for (let i = 0; i < 4; i++) { const dx = p[((i + 1) % 4) * 2] - p[i * 2], dz = p[((i + 1) % 4) * 2 + 1] - p[i * 2 + 1], L = Math.hypot(dx, dz); if (L > best) { best = L; ux = dx / L; uz = dz / L; } }
+    const vx = -uz, vz = ux;
+    let L = 0, Wd = 0; for (let i = 0; i < 4; i++) { const dx = p[i * 2] - cx, dz = p[i * 2 + 1] - cz; L = Math.max(L, Math.abs(dx * ux + dz * uz)); Wd = Math.max(Wd, Math.abs(dx * vx + dz * vz)); }
+    const o = 0.5, Lo = L + o, Wo = Wd + o, rise = Math.min(Wd * 0.55, 3.5), ridge = Math.max(L - Wd, 0) * (rand(n + 41) < 0.35 ? 1.25 : 1);
+    const P = (a, b, y) => [cx + ux * a + vx * b, y, cz + uz * a + vz * b];
+    const c1 = P(-Lo, -Wo, top), c2 = P(Lo, -Wo, top), c3 = P(Lo, Wo, top), c4 = P(-Lo, Wo, top);
+    const r1 = P(-Math.min(ridge, Lo), 0, top + rise), r2 = P(Math.min(ridge, Lo), 0, top + rise);
+    const s = 1.6, sl = Math.hypot(Wo, rise) / s, el = Math.hypot(Lo - Math.min(ridge, Lo), rise) / s;
+    tri(buckets.roof, c1, c2, r2, [-Lo / s, 0], [Lo / s, 0], [ridge / s, sl], roofC); tri(buckets.roof, c1, r2, r1, [-Lo / s, 0], [ridge / s, sl], [-ridge / s, sl], roofC);
+    tri(buckets.roof, c3, c4, r1, [-Lo / s, 0], [Lo / s, 0], [ridge / s, sl], roofC); tri(buckets.roof, c3, r1, r2, [-Lo / s, 0], [ridge / s, sl], [-ridge / s, sl], roofC);
+    tri(buckets.roof, c2, c3, r2, [-Wo / s, 0], [Wo / s, 0], [0, el], roofC);
+    tri(buckets.roof, c4, c1, r1, [-Wo / s, 0], [Wo / s, 0], [0, el], roofC);
+  } else {
+    const contour = []; for (let i = 0; i < m; i++) contour.push(new THREE.Vector2(p[i * 2], p[i * 2 + 1]));
+    const flatC = new THREE.Color(0xb9b4aa).multiplyScalar(0.85 + rand(n + 15) * 0.2);
+    for (const [a, b2, c] of THREE.ShapeUtils.triangulateShape(contour, [])) {
+      tri(buckets.flat, [p[a * 2], top, p[a * 2 + 1]], [p[b2 * 2], top, p[b2 * 2 + 1]], [p[c * 2], top, p[c * 2 + 1]], [0, 0], [0, 0], [0, 0], flatC);
+    }
+  }
+
+  let r = 0; for (let i = 0; i < m; i++) r = Math.max(r, Math.hypot(p[i * 2] - cx, p[i * 2 + 1] - cz));
+  footprints.push({ p, cx, cz, r, top, base: ymin, name: b.n, kind: b.k });
+});
+const bucketMesh = (B, mat) => {
+  if (!B.pos.length) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(B.pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(B.uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(B.col, 3));
+  g.computeVertexNormals();
+  scene.add(new THREE.Mesh(g, mat));
+};
+buckets.walls.forEach((B, i) => bucketMesh(B, wallMats[i]));
+bucketMesh(buckets.roof, roofMat);
+bucketMesh(buckets.flat, flatRoofMat);
+
+// ---------- Taung Kwe Pagoda ----------
+// Modelled on photos: a wide, flat-topped grey limestone crag with the main gilded
+// stupa on top, smaller stupas and blue-roofed halls around it, and a tall white
+// lift tower crowned by a tiered gold pyatthat roof.
 const [TKX, TKZ] = toLocal(19.6675, 97.2081);
 const gold = new THREE.MeshStandardMaterial({ color: 0xd9a92e, metalness: 0.55, roughness: 0.32, emissive: 0x6a4708, emissiveIntensity: 0 });
 {
-  const rockMat = new THREE.MeshLambertMaterial({ color: 0xa39d92, flatShading: true });
+  const rockMat = new THREE.MeshLambertMaterial({ color: 0x8e8a83, flatShading: true });
   const white = new THREE.MeshLambertMaterial({ color: 0xf2eee6 });
-  const g0 = ground(TKX, TKZ);
-  const tk = new THREE.Group(); tk.position.set(TKX, g0 - 2, TKZ); scene.add(tk);
-  // craggy rock: noisy icosahedra, stretched upward
-  const crag = (r, h, x, z, seed) => {
-    const g = new THREE.IcosahedronGeometry(r, 2), p = g.attributes.position, v = new THREE.Vector3();
+  const blue = new THREE.MeshLambertMaterial({ color: 0x3f6fa8 });
+  const green = new THREE.MeshLambertMaterial({ color: 0x3d8a6a });
+  const g0 = ground(TKX, TKZ), ROCK_H = 30;
+  const tk = new THREE.Group(); tk.position.set(TKX, g0 - 3, TKZ); scene.add(tk);
+  // the crag: a tapered cylinder pushed in and out to make cliffs and gullies
+  {
+    const g = new THREE.CylinderGeometry(24, 33, ROCK_H + 3, 40, 10), p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
-      v.fromBufferAttribute(p, i);
-      const n = 1 + 0.22 * Math.sin(v.x * 1.7 + seed) * Math.cos(v.z * 1.3 + seed * 2) + 0.12 * Math.sin(v.y * 3.1 + seed);
-      v.multiplyScalar(n); v.y = Math.max(v.y, -r * 0.2) * (h / r);
-      p.setXYZ(i, v.x, v.y, v.z);
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x), t = (y + (ROCK_H + 3) / 2) / (ROCK_H + 3);
+      const k = 1 + 0.16 * Math.sin(a * 7 + 1.3) + 0.1 * Math.sin(a * 13 + y * 0.25) + 0.07 * Math.cos(a * 23 - y * 0.6);
+      const top = t > 0.98 ? 0.6 * Math.sin(a * 5) : 0;
+      p.setXYZ(i, x * k, y + top, z * k * 0.68);
     }
+    g.translate(0, (ROCK_H + 3) / 2, 0);
     g.computeVertexNormals();
-    const m = new THREE.Mesh(g, rockMat); m.position.set(x, 0, z); tk.add(m);
-  };
-  crag(30, 12, 0, 0, 1);       // base mound
-  crag(11, 34, -8, -3, 2);     // west peak
-  crag(10, 30, 9, 3, 3);       // east peak (the "split")
-  crag(7, 20, 2, -14, 4);
+    tk.add(new THREE.Mesh(g, rockMat));
+  }
+  const add = (mesh, x, y, z) => { mesh.position.set(x, y, z); tk.add(mesh); return mesh; };
+  const T0 = ROCK_H + 3;
+  add(new THREE.Mesh(new THREE.BoxGeometry(34, 1.2, 18), white), 0, T0 + 0.6, 0); // the terrace
   // Burmese stupa profile: terraces, bell, bands, lotus, banana bud
   const prof = [[0, 0], [3, 0], [3, .8], [2.6, .8], [2.6, 1.6], [2.2, 1.6], [2.2, 2.4], [2.05, 2.6], [2.15, 3.3], [2, 4], [1.7, 4.6], [1.2, 5], [1.05, 5.2], [.95, 5.6], [.7, 5.8], [.8, 6], [.5, 6.4], [.46, 6.8], [.32, 7.4], [.14, 7.9], [.05, 8.3], [0, 8.4]];
-  const stupaGeo = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 28);
+  const stupaGeo = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 32);
   const stupa = (x, y, z, s) => {
-    const plinth = new THREE.Mesh(new THREE.BoxGeometry(8 * s, 1.2 * s, 8 * s), white); plinth.position.set(x, y + 0.6 * s, z); tk.add(plinth);
-    const st = new THREE.Mesh(stupaGeo, gold); st.scale.setScalar(s * 1.4); st.position.set(x, y + 1.2 * s, z); tk.add(st);
-    const hti = new THREE.Mesh(new THREE.ConeGeometry(0.35 * s, 1 * s, 12), gold); hti.position.set(x, y + 1.2 * s + 12.2 * s, z); tk.add(hti);
+    add(new THREE.Mesh(new THREE.BoxGeometry(7 * s, 1.2 * s, 7 * s), white), x, y + 0.6 * s, z);
+    add(new THREE.Mesh(stupaGeo, gold), x, y + 1.2 * s, z).scale.setScalar(s);
+    add(new THREE.Mesh(new THREE.ConeGeometry(0.4 * s, 1.1 * s, 12), gold), x, y + 1.2 * s + 8.8 * s, z);
   };
-  stupa(-8, 33, -3, 1.1);
-  stupa(9, 29, 3, 0.8);
-  // covered stairway climbing the south face
-  for (let i = 0; i < 14; i++) {
-    const step = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 2.6), white);
-    step.position.set(-2 + i * 0.2, 2 + i * 2, 26 - i * 1.6); tk.add(step);
+  stupa(2, T0 + 1.2, -1, 1.9);                       // main stupa
+  for (const [x, z] of [[-11, -5], [13, 5], [-6, 6], [9, -6]]) stupa(x, T0 + 1.2, z, 0.55);
+  // hall with a blue tin roof, and a green-roofed one
+  const hall = (x, z, w, d, mat) => {
+    add(new THREE.Mesh(new THREE.BoxGeometry(w, 3, d), white), x, T0 + 2.7, z);
+    const roof = add(new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2 + 0.6, 2.2, 4), mat), x, T0 + 5.3, z);
+    roof.rotation.y = Math.PI / 4; roof.scale.set(w / Math.hypot(w, d) * 1.45, 1, d / Math.hypot(w, d) * 1.45);
+  };
+  hall(-10, 2, 9, 6, blue);
+  hall(13, -2, 6, 5, green);
+  // lift tower on the west side, crowned by a seven-tier pyatthat
+  const TX = -27, TZ = 4, towerH = T0 + 9;
+  add(new THREE.Mesh(new THREE.BoxGeometry(7, towerH, 7), white), TX, towerH / 2, TZ);
+  for (const sx of [-1, 1]) add(new THREE.Mesh(new THREE.BoxGeometry(0.15, towerH - 6, 1.4), new THREE.MeshLambertMaterial({ color: 0x4d5b66 })), TX + sx * 3.55, towerH / 2, TZ);
+  add(new THREE.Mesh(new THREE.BoxGeometry(1.4, towerH - 6, 0.15), new THREE.MeshLambertMaterial({ color: 0x4d5b66 })), TX, towerH / 2, TZ + 3.55);
+  add(new THREE.Mesh(new THREE.BoxGeometry(18, 1, 2.5), white), TX + 10, T0 + 1, TZ); // bridge to the terrace
+  let y = towerH;
+  for (let i = 0; i < 7; i++) {
+    const w = 8.4 - i * 1.05, tier = add(new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, 1.5, 4, 1, true), gold), TX, y + 0.75, TZ);
+    tier.rotation.y = Math.PI / 4;
+    if (i < 6) add(new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.6, w * 0.6), gold), TX, y + 1.6, TZ);
+    y += i < 6 ? 1.6 : 1.5;
   }
-  const ring = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) ring.push(TKX + Math.cos(a) * 16, TKZ + Math.sin(a) * 12);
-  footprints.push({ p: ring, cx: TKX, cz: TKZ, r: 17, top: g0 + 44, base: g0, name: 'Taung Kwe Pagoda' });
+  add(new THREE.Mesh(new THREE.ConeGeometry(0.5, 5, 12), gold), TX, y + 2.5, TZ);
+  // collision: the rock and the tower
+  const ring = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 10) ring.push(TKX + Math.cos(a) * 30, TKZ + Math.sin(a) * 20);
+  footprints.push({ p: ring, cx: TKX, cz: TKZ, r: 31, top: g0 + T0, base: g0, name: 'Taung Kwe Pagoda' });
+  const tw = [TKX + TX - 3.5, TKZ + TZ - 3.5, TKX + TX + 3.5, TKZ + TZ - 3.5, TKX + TX + 3.5, TKZ + TZ + 3.5, TKX + TX - 3.5, TKZ + TZ + 3.5];
+  footprints.push({ p: tw, cx: TKX + TX, cz: TKZ + TZ, r: 5, top: g0 + y + 5, base: g0, name: 'Taung Kwe lift tower' });
 }
 
 // ---------- spatial hashes ----------
@@ -272,6 +454,7 @@ function label(text, sub, x, z, big) {
   s.position.set(x, ground(x, z) + (big ? 120 : 14), z);
   s.userData.big = big;
   labelGroup.add(s);
+  return s;
 }
 for (const p of data.places) {
   if (p.k === 'city') continue;
@@ -279,8 +462,68 @@ for (const p of data.places) {
 }
 const city = data.places.find((p) => p.k === 'city');
 if (city) label('Loikaw', city.my, city.x, city.z, true);
-label('Taung Kwe Pagoda', 'တောင်ကွဲစေတီ', TKX, TKZ, false);
-labelGroup.children.at(-1).position.y += 36;
+label('Taung Kwe Pagoda', 'တောင်ကွဲစေတီ', TKX, TKZ, false).position.y += 42;
+
+// ---------- landmarks ----------
+// Positions from OpenStreetMap, except the two video shops, which came from someone
+// who grew up nearby.
+const LANDMARKS = [
+  ['Clock Tower', 'နာရီစင်', 19.67717, 97.21201, 8],
+  ['Naung Yar Lake', 'နောင်ယားကန်', 19.67971, 97.20735, 0],
+  ['Loikaw University', 'လွိုင်ကော်တက္ကသိုလ်', 19.69339, 97.19723, 0],
+  ['Technological University', 'နည်းပညာတက္ကသိုလ်', 19.6546, 97.2086, 0],
+  ['Computer University', 'ကွန်ပြူတာတက္ကသိုလ်', 19.69641, 97.22059, 0],
+  ['BEHS No. 7', 'အထက ၇', 19.6744, 97.22025, 0],
+  ['BEMS No. 2', 'အလက ၂', 19.68056, 97.21142, 0],
+  ['HiFi ခွေငှားဆိုင်', 'HiFi video rental', 19.669536878688188, 97.21483766712618, -6],
+  ['နဝဒေး ခွေငှားဆိုင်', 'Nawaday video rental', 19.669648640922983, 97.21502139844692, -2],
+];
+for (const [en, my, lat, lon, dy] of LANDMARKS) { const [x, z] = toLocal(lat, lon); label(en, my, x, z, false).position.y += dy; }
+
+// the clock tower: a tapering shaft painted in green, white, red and blue stripes,
+// a white clock box with blue trim, and a little silver spire, on a planted roundabout
+const clockFace = document.createElement('canvas'); clockFace.width = clockFace.height = 128;
+const clockTex = new THREE.CanvasTexture(clockFace); clockTex.colorSpace = THREE.SRGBColorSpace;
+let clockShown = -1;
+function drawClock(h) {
+  const mins = Math.floor(h * 60); if (mins === clockShown) return; clockShown = mins;
+  const x = clockFace.getContext('2d');
+  x.fillStyle = '#2f62a8'; x.fillRect(0, 0, 128, 128);
+  x.fillStyle = '#fbfaf5'; x.beginPath(); x.arc(64, 64, 52, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#222';
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; x.fillRect(64 + Math.sin(a) * 44 - 2, 64 - Math.cos(a) * 44 - 2, 4, 4); }
+  const hand = (a, len, w) => { x.lineWidth = w; x.lineCap = 'round'; x.strokeStyle = '#1b1b1b'; x.beginPath(); x.moveTo(64, 64); x.lineTo(64 + Math.sin(a) * len, 64 - Math.cos(a) * len); x.stroke(); };
+  hand((h % 12) / 12 * Math.PI * 2, 26, 6); hand((h % 1) * Math.PI * 2, 40, 3.5);
+  clockTex.needsUpdate = true;
+}
+{
+  const g0 = ground(CLX, CLZ), ct = new THREE.Group(); ct.position.set(CLX, g0, CLZ); scene.add(ct);
+  const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+  const stripes = document.createElement('canvas'); stripes.width = 128; stripes.height = 8;
+  const sx = stripes.getContext('2d');
+  [['#2e8b4a', 0, 26], ['#f4f2ec', 26, 14], ['#c8302c', 40, 48], ['#f4f2ec', 88, 14], ['#2f62a8', 102, 26]].forEach(([c, a, w]) => { sx.fillStyle = c; sx.fillRect(a, 0, w, 8); });
+  const stripeTex = new THREE.CanvasTexture(stripes); stripeTex.wrapS = THREE.RepeatWrapping; stripeTex.repeat.x = 4; stripeTex.colorSpace = THREE.SRGBColorSpace;
+  const add = (geo, mat, y, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.y = y; m.rotation.y = ry; ct.add(m); return m; };
+  add(new THREE.CylinderGeometry(5, 5, 0.45, 40), lam(0xd8d2c6), 0.22);
+  add(new THREE.CylinderGeometry(4.6, 4.6, 0.5, 40), lam(0x4f7f3a), 0.3);
+  // red-and-white curb
+  for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; add(new THREE.BoxGeometry(1.25, 0.35, 0.3), lam(i % 2 ? 0xf4f2ec : 0xc8302c), 0.62, -a).position.set(Math.cos(a) * 4.85, 0.62, Math.sin(a) * 4.85); }
+  const shaftMat = new THREE.MeshLambertMaterial({ map: stripeTex });
+  add(new THREE.CylinderGeometry(1.15, 1.9, 2.2, 4, 1), shaftMat, 1.6, Math.PI / 4);
+  add(new THREE.CylinderGeometry(0.72, 1.15, 8, 4, 1), shaftMat, 6.7, Math.PI / 4);
+  for (let y = 3.5; y < 10.5; y += 0.9) add(new THREE.BoxGeometry(0.5, 0.08, 1.6), lam(0xf4f2ec), y).scale.z = 1.6 - (y - 2.7) * 0.05; // ladder rungs on the red stripe
+  add(new THREE.BoxGeometry(2.4, 0.25, 2.4), lam(0x2f62a8), 10.8);
+  add(new THREE.BoxGeometry(2.1, 2.1, 2.1), lam(0xf4f2ec), 12);
+  const faceMat = new THREE.MeshBasicMaterial({ map: clockTex });
+  for (let i = 0; i < 4; i++) { const f = add(new THREE.PlaneGeometry(1.7, 1.7), faceMat, 12, i * Math.PI / 2); f.position.x = Math.sin(i * Math.PI / 2) * 1.06; f.position.z = Math.cos(i * Math.PI / 2) * 1.06; }
+  add(new THREE.BoxGeometry(2.6, 0.2, 2.6), lam(0x2f62a8), 13.15);
+  const silver = new THREE.MeshStandardMaterial({ color: 0xd5d8dc, metalness: 0.8, roughness: 0.35 });
+  add(new THREE.CylinderGeometry(0.1, 1.5, 1.2, 4), silver, 13.85, Math.PI / 4);
+  add(new THREE.CylinderGeometry(0.06, 0.45, 2.6, 8), silver, 15.6);
+  const ring = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) ring.push(CLX + Math.cos(a) * 4.8, CLZ + Math.sin(a) * 4.8);
+  const f = { p: ring, cx: CLX, cz: CLZ, r: 5, top: g0 + 16.5, base: g0, name: 'Clock Tower' };
+  footprints.push(f); for (const dx of [-6, 6]) for (const dz of [-6, 6]) if (!bHash.get(key(CLX + dx, CLZ + dz))?.includes(f)) push(bHash, key(CLX + dx, CLZ + dz), f);
+}
 
 // ---------- time of day ----------
 const glowTex = (() => {
@@ -309,18 +552,7 @@ for (const r of data.roads) {
     acc = (acc + L) % 40;
   }
 }
-const streetLights = glowPoints(lamps, 0xffb860, 7);
-// lit windows: a glow on one or two walls of about half the houses
-const win = [];
-footprints.forEach((f, n) => {
-  if (!f.base || rand(n + 21) > 0.5) return;
-  for (let k = 0; k < (rand(n + 22) > 0.6 ? 2 : 1); k++) {
-    const m = f.p.length / 2, i = ((rand(n + 23 + k) * m) | 0) * 2, j = (i + 2) % f.p.length;
-    const mx = (f.p[i] + f.p[j]) / 2, mz = (f.p[i + 1] + f.p[j + 1]) / 2, dx = mx - f.cx, dz = mz - f.cz, L = Math.hypot(dx, dz) || 1;
-    win.push(mx + dx / L * 0.3, f.base + 2.2, mz + dz / L * 0.3);
-  }
-});
-const windows = glowPoints(win, 0xffd28a, 2.6);
+const streetLights = glowPoints(lamps, 0xffb860, 3.5);
 // stars on a dome around the camera
 const starPos = [];
 for (let i = 0; i < 1800; i++) {
@@ -334,6 +566,85 @@ const sunDisc = disc(0xfff2c8, 520), moonDisc = disc(0xdfe6ff, 260);
 // headlight for the bicycle and motorbike
 const headlight = new THREE.SpotLight(0xfff0d0, 0, 140, 0.42, 0.55, 1);
 camera.add(headlight); camera.add(headlight.target); headlight.position.set(0, -0.4, -1.3); headlight.target.position.set(0, -2.5, -20);
+
+// ---------- Thadingyut: the festival of lights ----------
+// Candles along the front of homes, paper lanterns along the main streets, and strings
+// of lights running down from the pagoda spire and the clock tower. Each flame flickers
+// on its own phase in the vertex shader.
+const flameMat = new THREE.ShaderMaterial({
+  uniforms: { map: { value: glowTex }, time: { value: 0 }, opacity: { value: 0 }, scale: { value: innerHeight / 2 } },
+  vertexShader: `
+    attribute float size; attribute float phase; attribute vec3 color;
+    uniform float time, opacity, scale;
+    varying vec3 vColor; varying float vA;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      float f = 0.72 + 0.28 * sin(time * 9.0 + phase * 31.0) * sin(time * 5.3 + phase * 13.0);
+      vA = opacity * f * clamp(1.0 - (-mv.z) / 3000.0, 0.0, 1.0);
+      vColor = color;
+      gl_PointSize = max(1.5, size * scale / -mv.z * (0.85 + 0.3 * f));
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `
+    uniform sampler2D map; varying vec3 vColor; varying float vA;
+    void main() { vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(vColor * t.rgb, t.a * vA); }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+{
+  const pos = [], col = [], size = [], phase = [];
+  let seed = 1;
+  const put = (x, y, z, c, sz) => { pos.push(x, y, z); col.push(c.r, c.g, c.b); size.push(sz); phase.push(rand(seed++)); };
+  const CANDLE = new THREE.Color(0xffb54a), LANTERNS = [0xff5a3c, 0xffc23a, 0xff8a2a, 0x58d06a, 0xff6fb0, 0x6ab4ff].map((h) => new THREE.Color(h));
+  // candles: a row along the longest wall of most homes, and on the windowsill
+  footprints.forEach((f, n) => {
+    if (!f.base || rand(n + 61) > 0.7 || f.p.length > 40) return;
+    const m = f.p.length / 2; let bi = 0, bl = 0;
+    for (let i = 0; i < m; i++) { const j = (i + 1) % m, L = Math.hypot(f.p[j * 2] - f.p[i * 2], f.p[j * 2 + 1] - f.p[i * 2 + 1]); if (L > bl) { bl = L; bi = i; } }
+    const j = (bi + 1) % m, ax = f.p[bi * 2], az = f.p[bi * 2 + 1], bx = f.p[j * 2], bz = f.p[j * 2 + 1];
+    let nx = -(bz - az) / bl, nz = (bx - ax) / bl;
+    if (nx * ((ax + bx) / 2 - f.cx) + nz * ((az + bz) / 2 - f.cz) < 0) { nx = -nx; nz = -nz; }
+    for (let d = 0.4; d < bl - 0.3; d += 0.8) {
+      const x = ax + (bx - ax) * d / bl, z = az + (bz - az) * d / bl;
+      put(x + nx * 0.35, ground(x, z) + 0.12, z + nz * 0.35, CANDLE, 0.32);
+      if (rand(seed + 3) < 0.35) put(x + nx * 0.18, f.base + 1.45, z + nz * 0.18, CANDLE, 0.28);
+    }
+    if (rand(n + 62) < 0.45) { const x = (ax + bx) / 2 + nx * 0.9, z = (az + bz) / 2 + nz * 0.9; put(x, f.top - 0.6, z, LANTERNS[(rand(n + 63) * 6) | 0], 1.1); }
+  });
+  // paper lanterns strung along both sides of the main streets
+  for (const r of data.roads) {
+    if (roadRank(r.t) < 6) continue;
+    const off = (ROAD_W[r.t] ?? 6) / 2 + 1; let k = 0;
+    for (let i = 0; i < r.p.length - 2; i += 2) {
+      const ax = r.p[i], az = r.p[i + 1], bx = r.p[i + 2], bz = r.p[i + 3], L = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / L, nz = (bx - ax) / L;
+      for (let d = 0; d < L; d += 3.2, k++) {
+        const x = ax + (bx - ax) * d / L, z = az + (bz - az) * d / L, sag = Math.sin((k % 6) / 6 * Math.PI) * 0.5;
+        for (const sd of [-1, 1]) put(x + nx * off * sd, ground(x, z) + 4.6 - sag, z + nz * off * sd, LANTERNS[(k + (sd > 0 ? 3 : 0)) % 6], 0.9);
+      }
+    }
+  }
+  // strings of lights from a spire down to a ring around its base
+  const strands = (tx, ty, tz, r, by, count, perStrand, colors) => {
+    for (let s = 0; s < count; s++) {
+      const a = s / count * Math.PI * 2, ex = tx + Math.cos(a) * r, ez = tz + Math.sin(a) * r;
+      for (let i = 1; i <= perStrand; i++) { const t = i / perStrand; put(tx + (ex - tx) * t, ty + (by - ty) * t - Math.sin(t * Math.PI) * r * 0.08, tz + (ez - tz) * t, colors[(s + i) % colors.length], 0.55); }
+    }
+  };
+  const tkBase = ground(TKX, TKZ) - 3 + 33 + 1.2;
+  strands(TKX + 2, tkBase + 19, TKZ - 1, 15, tkBase + 0.4, 24, 26, [CANDLE, new THREE.Color(0xfff1c0)]);
+  for (let x = -17; x <= 17; x += 0.9) for (const z of [-9, 9]) put(TKX + x, tkBase + 0.2, TKZ + z, CANDLE, 0.4);
+  const clBase = ground(CLX, CLZ);
+  strands(CLX, clBase + 16.5, CLZ, 4.9, clBase + 0.9, 16, 22, LANTERNS);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('size', new THREE.Float32BufferAttribute(size, 1));
+  g.setAttribute('phase', new THREE.Float32BufferAttribute(phase, 1));
+  const pts = new THREE.Points(g, flameMat); pts.frustumCulled = false; scene.add(pts);
+  console.info(`Thadingyut: ${pos.length / 3} lights`);
+}
+// on by default during the three Thadingyut holidays (24-27 October 2026 here)
+const mmNow = new Date(Date.now() + 6.5 * 3600e3);
+let festival = mmNow.getUTCFullYear() === 2026 && mmNow.getUTCMonth() === 9 && mmNow.getUTCDate() >= 24 && mmNow.getUTCDate() <= 27;
 
 const C = (h) => new THREE.Color(h);
 const SKY_NIGHT = C(0x0a1226), SKY_DAY = C(0xb9cbd8), SKY_GLOW = C(0xf0a070), SUN_LOW = C(0xffa060), SUN_HIGH = C(0xfff1dc);
@@ -357,11 +668,13 @@ function setTime(h) {
   moon.position.copy(sunDir).multiplyScalar(-2000).setY(1500);
   moon.intensity = 0.35 * night;
   streetLights.material.opacity = smooth(0.3, 0.7, night);
-  windows.material.opacity = smooth(0.35, 0.8, night) * 0.9;
+  for (const m of wallMats) m.emissiveIntensity = smooth(0.35, 0.8, night) * 0.9; // lit window panes
   stars.material.opacity = smooth(0.6, 1, night);
   gold.emissiveIntensity = night * 1.6;
   sunDisc.material.opacity = smooth(-0.05, 0.02, e);
   moonDisc.material.opacity = smooth(0.5, 0.9, night);
+  moonDisc.scale.setScalar(festival ? 420 : 260); // the Thadingyut full moon
+  flameMat.uniforms.opacity.value = festival ? smooth(0.25, 0.7, night) : 0;
 }
 // Loikaw is UTC+6:30; start at the time it is there right now
 const nowMM = new Date(Date.now() + 6.5 * 3600e3);
@@ -369,18 +682,22 @@ let hour = nowMM.getUTCHours() + nowMM.getUTCMinutes() / 60, timeFlows = false;
 const fmtHour = (h) => `${String(Math.floor(h) % 24).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
 function showTime() {
   setTime(hour);
+  drawClock(hour);
   $('time').value = hour;
   $('time-label').textContent = fmtHour(hour);
   $('time-play').textContent = timeFlows ? 'Pause' : 'Play';
   $('time-play').setAttribute('aria-pressed', timeFlows);
 }
 $('time').addEventListener('input', (e) => { hour = +e.target.value; showTime(); });
+function showFestival() { const b = $('festival'); b.setAttribute('aria-pressed', festival); b.textContent = festival ? 'Festival lights on' : 'Festival lights off'; setTime(hour); }
+$('festival').addEventListener('click', (e) => { e.stopPropagation(); festival = !festival; showFestival(); });
+showFestival();
 $('time-play').addEventListener('click', (e) => { e.stopPropagation(); timeFlows = !timeFlows; showTime(); });
 showTime();
 
 // ---------- player ----------
-const market = data.places.find((p) => p.n === 'Market') ?? city ?? { x: 0, z: 0 };
-const player = { x: market.x + 6, z: market.z + 6, y: 0, vy: 0, yaw: -Math.PI / 4, pitch: 0, speed: 0, mode: 'walk', onGround: true, roll: 0, hover: false };
+// start just south of the clock tower, looking up at it
+const player = { x: CLX, z: CLZ + 16, y: 0, vy: 0, yaw: 0, pitch: 0, speed: 0, mode: 'walk', onGround: true, roll: 0, hover: false };
 player.y = ground(player.x, player.z);
 const keys = new Set();
 let started = false, mapBig = false;
@@ -428,6 +745,7 @@ addEventListener('keydown', (e) => {
   if (!started) return;
   if (e.code === 'Digit1') setMode('walk'); if (e.code === 'Digit2') setMode('bike'); if (e.code === 'Digit3') setMode('moto'); if (e.code === 'Digit4') setMode('fly');
   if (e.code === 'KeyF') toggleHover();
+  if (e.code === 'KeyL') { festival = !festival; showFestival(); }
   if (e.code === 'KeyT') { timeFlows = !timeFlows; showTime(); }
   if (e.code === 'BracketLeft' || e.code === 'BracketRight') { hour = (hour + (e.code === 'BracketLeft' ? 23 : 1)) % 24; showTime(); }
   if (e.code === 'KeyM') { mapBig = !mapBig; $('minimap').classList.toggle('big', mapBig); sizeMap(); }
@@ -653,6 +971,7 @@ function tick() {
   }
   engineUpdate(M.ride && fwd > 0 ? 1 : 0);
   if (timeFlows) { hour = (hour + dt / 30) % 24; showTime(); } // one hour every 30 s
+  flameMat.uniforms.time.value = clock.elapsedTime;
   sunDisc.position.copy(camera.position).addScaledVector(sunDir, 4500);
   moonDisc.position.copy(camera.position).addScaledVector(sunDir, -4500).setY(camera.position.y + 2200);
   stars.position.copy(camera.position);
@@ -663,7 +982,7 @@ function tick() {
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (started) sizeMap(); });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); flameMat.uniforms.scale.value = innerHeight / 2; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (started) sizeMap(); });
 new ResizeObserver(() => started && sizeMap()).observe(mm);
 console.info(`Loikaw 3D: ${footprints.length} buildings (${estimated} with estimated height), ${data.roads.length} roads`);
 requestAnimationFrame(tick);

@@ -15,6 +15,7 @@ Walk, cycle, ride a motorbike or fly around Loikaw (လွိုင်ကော�
 | `C` | descend (fly) |
 | `1` `2` `3` `4` | walk · bicycle · motorbike · fly |
 | `F` | take off / land on the bicycle or motorbike (then Space/C or look up/down to climb) |
+| `L` | Thadingyut festival lights on/off (on by default during the festival) |
 | `T` | let time run (one hour every 30 seconds) · `[` `]` an hour back/forward |
 | `M` | bigger map; click the map to jump there |
 
@@ -26,7 +27,13 @@ On a phone: joystick bottom-left, drag anywhere to look.
 - **~23,000 more building outlines**: [Microsoft Global ML Building Footprints](https://github.com/microsoft/GlobalMLBuildingFootprints), traced from satellite imagery, ODbL. These have no height information, so heights are estimated (mostly one or two storeys).
 - **Terrain**: [Mapzen / AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM-based, ~30 m).
 
-**Taung Kwe Pagoda** is a hand-made model placed at its real location (19.6675° N, 97.2081° E); its shape is an approximation, not a survey.
+**Hand-made models**, placed at their real locations and shaped after photos on [Wikimedia Commons (Category:Loikaw)](https://commons.wikimedia.org/wiki/Category:Loikaw); the shapes are approximations, not surveys:
+- **Taung Kwe Pagoda** (19.6675° N, 97.2081° E): the flat-topped crag, main stupa, smaller stupas and the lift tower with its tiered roof.
+- **Clock Tower / နာရီစင်** (19.6772° N, 97.2120° E): the striped tower on its roundabout. Its clock shows the game's time. This is where you start.
+
+**Buildings** get painted facades (plaster houses, shophouses along the main roads, teak houses, concrete blocks) and hipped tin roofs in the blue, green, red and grey seen around town. These are typical styles, not the real look of each building.
+
+**Thadingyut**: candles in front of homes, paper lanterns along the main streets, and strings of lights on the pagoda and clock tower, under a full moon.
 
 Satellite imagery and OSM edits come from different years, so some buildings may no longer stand, or may be missing.
 

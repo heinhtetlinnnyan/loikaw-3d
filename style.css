@@ -92,3 +92,6 @@ h1 span { font: 600 30px/1.4 var(--my); color: var(--accent); margin-left: 6px; 
 }
 #t-up { bottom: 110px; } #t-down { bottom: 44px; }
 @media (prefers-reduced-motion: reduce) { .mode { transition: none; } }
+
+.festival { padding: 7px 14px; font-size: 13px; font-weight: 500; color: var(--ink-dim); }
+.festival[aria-pressed="true"] { color: var(--ink); border-color: #e0a040; box-shadow: 0 0 18px rgba(255, 180, 70, .35); }
