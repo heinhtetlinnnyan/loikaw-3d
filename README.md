@@ -36,7 +36,7 @@ On a phone: joystick bottom-left, drag anywhere to look.
 
 - **ဝိုင်းဘို အိမ်**, and a short lane nearby with golden paving, candles on both sides and paper lanterns overhead, lit every night: a street with a lot of history for the person this map was made for.
 
-- **Old home / အိမ်ဟောင်း**: a single-storey house with a low grey tin roof behind a block wall, with an open gateway, a red-earth driveway, big shady trees, and lights at the gate every night.
+- **Old home / အိမ်ဟောင်း**: laid out from its aerial view. The gateway opens off the road to the north through a grey block wall, a red-earth driveway runs south between the houses, and the single-storey house with a low grey tin roof stands just east of it, among big shady trees. Lights at the gate and porch every night.
 
 **Buildings** get painted facades (plaster houses, shophouses along the main roads, teak houses, concrete blocks) and hipped tin roofs in the blue, green, red and grey seen around town. These are typical styles, not the real look of each building.
 

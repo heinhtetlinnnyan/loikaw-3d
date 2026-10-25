@@ -596,28 +596,40 @@ const MEMORY_LANE = (() => {
 ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 3.4, () => 0xb8743c, () => 0.42, 4);
 ribbonMesh([{ p: MEMORY_LANE.flat() }], () => 1.3, () => 0xe2b26a, () => 0.48, 5);
 
-// the old home's yard: wall with an open gateway toward the track to the west, red-earth
-// driveway to the front of the house, and big rain trees
+// the old home, laid out from its aerial view: the gate opens off the road to the north, a
+// red-earth driveway (the track in OpenStreetMap) runs south between the houses, the grey
+// tin-roofed house stands just east of it, and big trees shade the whole compound.
+// Offsets are metres from the house point, taken from the OSM road and track.
+const OLD_GATE = [-19.2, -35.8], OLD_DRIVE = [[-19.2, -35.8], [-17.0, -9.2], [-18.4, 20.1], [-6.1, 73.6]];
 {
-  const [hx, hz] = OLD_HOME, x0 = hx - 15.5, x1 = hx + 18, z0 = hz - 17, z1 = hz + 18, gz = hz + 10.5, gw = 4;
-  const wallMat = new THREE.MeshLambertMaterial({ color: 0x9d9a93 }), gy = (x, z) => ground(x, z);
-  const wall = (ax, az, bx, bz) => {
+  const [hx, hz] = OLD_HOME, at = ([x, z]) => [hx + x, hz + z];
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0x9d9a93 });
+  const wall = ([ax, az], [bx, bz]) => {
     const L = Math.hypot(bx - ax, bz - az), m = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.7, L), wallMat);
-    m.position.set((ax + bx) / 2, gy((ax + bx) / 2, (az + bz) / 2) + 0.75, (az + bz) / 2); m.rotation.y = Math.atan2(bx - ax, bz - az); scene.add(m);
+    m.position.set((ax + bx) / 2, ground((ax + bx) / 2, (az + bz) / 2) + 0.75, (az + bz) / 2); m.rotation.y = Math.atan2(bx - ax, bz - az); scene.add(m);
   };
-  wall(x0, z0, x1, z0); wall(x1, z0, x1, z1); wall(x1, z1, x0, z1); wall(x0, z1, x0, gz + gw / 2); wall(x0, gz - gw / 2, x0, z0);
-  for (const pz of [gz - gw / 2, gz + gw / 2]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.1, 0.5), wallMat); post.position.set(x0, gy(x0, pz) + 0.95, pz); scene.add(post); }
-  ribbonMesh([{ p: [x0 - 2, gz, hx - 4, gz, hx - 4, hz + 6.2] }], () => 3.4, () => 0xa4623e, () => 0.3, 3);
+  // a wall along the south side of the road, either side of the gateway
+  const [gx, gz] = at(OLD_GATE), [wx, wz] = at([-82.1, -25.3]), [ex, ez] = at([46.9, -44.5]);
+  const side = (tx, tz, from, to) => { // points along the road from the gate toward (tx, tz), 3.2 m to the south
+    const L = Math.hypot(tx - gx, tz - gz), ux = (tx - gx) / L, uz = (tz - gz) / L, sx = -uz, sz = ux, flip = sz < 0 ? -1 : 1;
+    return [from, to].map((d) => [gx + ux * d + sx * 3.2 * flip, gz + uz * d + sz * 3.2 * flip]);
+  };
+  const [w0, w1] = side(wx, wz, 2.3, 32), [e0, e1] = side(ex, ez, 2.3, 40);
+  wall(w0, w1); wall(e0, e1);
+  for (const [px, pz] of [w0, e0]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.1, 0.5), wallMat); post.position.set(px, ground(px, pz) + 0.95, pz); scene.add(post); }
+  OLD_HOME.gate = [w0, e0];
+  ribbonMesh([{ p: OLD_DRIVE.flatMap(at) }], () => 3.6, () => 0xa4623e, () => 0.32, 3);
   const bark = new THREE.MeshLambertMaterial({ color: 0x4a3a2c }), leaves = new THREE.MeshLambertMaterial({ color: 0x3f5a2e, flatShading: true });
-  const tree = (x, z, sz, seed) => {
-    const y = gy(x, z), trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25 * sz, 0.4 * sz, 5 * sz, 7), bark);
+  const tree = ([x, z], sz, seed) => {
+    const y = ground(x, z), trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25 * sz, 0.4 * sz, 5 * sz, 7), bark);
     trunk.position.set(x, y + 2.5 * sz, z); scene.add(trunk);
     for (let i = 0; i < 5; i++) {
       const a = i / 5 * Math.PI * 2 + seed, r = i ? 2.6 * sz : 0, c = new THREE.Mesh(new THREE.IcosahedronGeometry((2.6 + rand(seed + i) * 1.2) * sz, 1), leaves);
       c.position.set(x + Math.cos(a) * r, y + (5.2 + rand(seed + i * 3) * 1.4) * sz, z + Math.sin(a) * r); c.scale.y = 0.7; scene.add(c);
     }
   };
-  tree(x0 + 4, gz - 7, 1.5, 1); tree(x0 - 3, gz + 6, 1.2, 2); tree(hx + 9, hz - 9, 1.3, 3); tree(hx + 12, hz + 12, 1.1, 4);
+  [[-2, -26, 1.6], [-32, -27, 1.5], [10, -18, 1.3], [16, 4, 1.2], [-29, 14, 1.3], [-46, 22, 1.4], [12, 28, 1.2], [-26, 42, 1.4], [16, 52, 1.3], [-40, -32, 1.2], [26, -30, 1.4]]
+    .forEach(([x, z, sz], i) => tree(at([x, z]), sz, i + 1));
 }
 
 // ရှမ်းပိုင်းတံတား, also called ဂျပန်တံတား, carrying NH21 over the Balu Chaung: a steel Warren truss
@@ -847,8 +859,8 @@ laneFlames.uniforms.map.value = glowTex; // share the texture instead of an unup
     run += L;
   }
   // the old home: a candle on each gate post and a porch light, every night
-  { const [hx, hz] = OLD_HOME, x0 = hx - 15.5, gz = hz + 10.5;
-    for (const [x, z, y, sz] of [[x0, gz - 2, 2.15, 0.6], [x0, gz + 2, 2.15, 0.6], [hx - 4, hz + 6.3, 2.6, 1.4]]) { pos.push(x, ground(x, z) + y, z); col.push(warm.r, warm.g, warm.b); size.push(sz); phase.push(rand(x + z)); } }
+  { const [hx, hz] = OLD_HOME, [[ax, az], [bx, bz]] = OLD_HOME.gate;
+    for (const [x, z, y, sz] of [[ax, az, 2.15, 0.6], [bx, bz, 2.15, 0.6], [hx - 14, hz, 2.6, 1.4]]) { pos.push(x, ground(x, z) + y, z); col.push(warm.r, warm.g, warm.b); size.push(sz); phase.push(rand(x + z)); } }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
