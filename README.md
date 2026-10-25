@@ -30,6 +30,7 @@ On a phone: joystick bottom-left, drag anywhere to look.
 **Hand-made models**, placed at their real locations and shaped after photos on [Wikimedia Commons (Category:Loikaw)](https://commons.wikimedia.org/wiki/Category:Loikaw); the shapes are approximations, not surveys:
 - **Taung Kwe Pagoda** (19.6675° N, 97.2081° E): the flat-topped crag, main stupa, smaller stupas and the lift tower with its tiered roof.
 - **Myo Nan Pagoda / မြို့နာမ်စေတီ** (19.6778° N, 97.2113° E): a gilded stupa on the platform traced from satellite imagery. No photos were found, so the stupa is a typical Burmese design, not its real shape.
+- **Iron Bridge / သံတံတား (ဂျပန်တံတား)** (19.6688° N, 97.2145° E): a steel truss on the western span of NH21 over the Balu Chaung, with a deck you can walk and ride across.
 - **Clock Tower / နာရီစင်** (19.6772° N, 97.2120° E): the striped tower on its roundabout. Its clock shows the game's time. This is where you start.
 
 **Buildings** get painted facades (plaster houses, shophouses along the main roads, teak houses, concrete blocks) and hipped tin roofs in the blue, green, red and grey seen around town. These are typical styles, not the real look of each building.

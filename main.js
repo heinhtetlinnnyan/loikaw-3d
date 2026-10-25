@@ -49,6 +49,15 @@ function ground(x, z) {
   return H[j * w + i] * (1 - dx) * (1 - dz) + H[j * w + i + 1] * dx * (1 - dz)
        + H[(j + 1) * w + i] * (1 - dx) * dz + H[(j + 1) * w + i + 1] * dx * dz;
 }
+// bridge decks you can walk and ride on, above whatever the terrain does underneath
+const decks = [];
+function deckAt(x, z) {
+  for (const d of decks) {
+    const t = ((x - d.ax) * d.ux + (z - d.az) * d.uz), off = Math.abs((x - d.ax) * -d.uz + (z - d.az) * d.ux);
+    if (t >= 0 && t <= d.len && off <= d.w / 2) return d.y0 + (d.y1 - d.y0) * t / d.len;
+  }
+  return -Infinity;
+}
 const X1 = T.x0 + (T.w - 1) * T.step, Z1 = T.z0 + (T.h - 1) * T.step;
 
 // ---------- terrain mesh ----------
@@ -506,11 +515,47 @@ const LANDMARKS = [
   ['Technological University', 'နည်းပညာတက္ကသိုလ်', 19.6546, 97.2086, 0],
   ['Computer University', 'ကွန်ပြူတာတက္ကသိုလ်', 19.69641, 97.22059, 0],
   ['BEHS No. 7', 'အထက ၇', 19.6744, 97.22025, 0],
-  ['BEMS No. 2', 'အလက ၂', 19.68056, 97.21142, 0],
+  ['BEHS No. 1', 'အထက ၁', 19.676334437488862, 97.2142472032823, 0],
+  ['BEHS No. 2', 'အထက ၂', 19.68586827132356, 97.20741829923378, 0],
+  ['Iron Bridge (Japanese Bridge)', 'သံတံတား (ဂျပန်တံတား)', 19.668754950575565, 97.21451005967769, 4],
   ['HiFi ခွေငှားဆိုင်', 'HiFi video rental', 19.669536878688188, 97.21483766712618, -6],
   ['နဝဒေး ခွေငှားဆိုင်', 'Nawaday video rental', 19.669648640922983, 97.21502139844692, -2],
 ];
 for (const [en, my, lat, lon, dy] of LANDMARKS) { const [x, z] = toLocal(lat, lon); label(en, my, x, z, false).position.y += dy; }
+
+// the iron bridge (ဂျပန်တံတား) carrying NH21 over the Balu Chaung: a steel Warren truss
+// on the western of the two spans, which is where the bridge was pointed out
+const BRIDGE = (() => {
+  const [ax, az] = toLocal(19.66834, 97.214178), [bx, bz] = toLocal(19.669146, 97.214969);
+  const len = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / len, uz = (bz - az) / len, vx = -uz, vz = ux;
+  const y0 = ground(ax, az) + 0.4, y1 = ground(bx, bz) + 0.4, W = 7, H = 5;
+  decks.push({ ax, az, ux, uz, len, w: W - 0.6, y0, y1 });
+  const steel = new THREE.MeshLambertMaterial({ color: 0x55646a }), slab = new THREE.MeshLambertMaterial({ color: 0x8d8780 });
+  const P = (t, side, up) => new THREE.Vector3(ax + ux * t + vx * side, y0 + (y1 - y0) * t / len + up, az + uz * t + vz * side);
+  const beams = [];
+  const beam = (a, b, th) => { const g = new THREE.BoxGeometry(th, th, a.distanceTo(b)); const m = new THREE.Object3D(); m.position.copy(a).add(b).multiplyScalar(0.5); m.lookAt(b); m.updateMatrix(); g.applyMatrix4(m.matrix); beams.push(g); };
+  const panels = Math.max(4, Math.round(len / 6)), pl = len / panels;
+  for (const side of [-W / 2, W / 2]) {
+    beam(P(0, side, 0), P(len, side, 0), 0.45);              // bottom chord
+    beam(P(pl / 2, side, H), P(len - pl / 2, side, H), 0.45); // top chord
+    for (let i = 0; i < panels; i++) {
+      const t0 = i * pl, tm = t0 + pl / 2, t1 = t0 + pl;
+      beam(P(t0, side, 0), P(Math.max(tm, pl / 2), side, H), 0.3); // diagonals
+      beam(P(Math.min(tm, len - pl / 2), side, H), P(t1, side, 0), 0.3);
+      beam(P(tm, side, 0), P(tm, side, H), 0.2);              // verticals
+    }
+  }
+  for (let i = 0; i < panels; i++) { const tm = i * pl + pl / 2; beam(P(tm, -W / 2, H), P(tm, W / 2, H), 0.25); } // overhead bracing
+  const g = mergeGeometries(beams); scene.add(new THREE.Mesh(g, steel));
+  // concrete deck, plus piers down into the river
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(W, 0.5, len), slab);
+  deck.position.copy(P(len / 2, 0, -0.25)); deck.lookAt(P(len, 0, -0.25)); scene.add(deck);
+  for (let i = 1; i < 3; i++) {
+    const c = P(len * i / 3, 0, -0.5), gy = ground(c.x, c.z), h = Math.max(0.5, c.y - gy + 2);
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(W - 1, h, 1.6), slab); pier.position.set(c.x, c.y - h / 2, c.z); pier.rotation.y = Math.atan2(ux, uz); scene.add(pier);
+  }
+  return { P, len, W, H };
+})();
 
 // the clock tower: a tapering shaft painted in green, white, red and blue stripes,
 // a white clock box with blue trim, and a little silver spire, on a planted roundabout
@@ -665,6 +710,7 @@ const flameMat = new THREE.ShaderMaterial({
   strands(TKX + 2, tkBase + 19, TKZ - 1, 15, tkBase + 0.4, 24, 26, [CANDLE, new THREE.Color(0xfff1c0)]);
   for (let x = -17; x <= 17; x += 0.9) for (const z of [-9, 9]) put(TKX + x, tkBase + 0.2, TKZ + z, CANDLE, 0.4);
   strands(MN_TOP.x, MN_TOP.top, MN_TOP.z, MN_TOP.rad * 0.9, MN_TOP.base + 0.3, 32, 34, [CANDLE, new THREE.Color(0xfff1c0), LANTERNS[1]]);
+  for (let t = 0; t <= BRIDGE.len; t += 1.2) for (const sd of [-1, 1]) { const q = BRIDGE.P(t, sd * BRIDGE.W / 2, BRIDGE.H + 0.4); put(q.x, q.y, q.z, LANTERNS[(t / 1.2 | 0) % 6], 0.6); }
   const clBase = ground(CLX, CLZ);
   strands(CLX, clBase + 16.5, CLZ, 4.9, clBase + 0.9, 16, 22, LANTERNS);
   const g = new THREE.BufferGeometry();
@@ -742,9 +788,9 @@ function setMode(m) {
   vehicle.bike.visible = m === 'bike'; vehicle.moto.visible = m === 'moto';
   if (m === 'moto') engineOn();
   if (m === 'fly' && prev !== 'fly') { player.y = Math.max(player.y, ground(player.x, player.z) + 60); player.pitch = -0.35; }
-  if (m !== 'fly' && prev === 'fly') { player.y = ground(player.x, player.z); player.pitch = 0; player.vy = 0; }
+  if (m !== 'fly' && prev === 'fly') { player.y = Math.max(ground(player.x, player.z), deckAt(player.x, player.z)); player.pitch = 0; player.vy = 0; }
   // don't land inside a building
-  for (let a = 0; insideBuilding(player.x, player.z, player.y + 0.1) && a < 60; a++) { player.x += Math.cos(a) * a; player.z += Math.sin(a) * a; player.y = ground(player.x, player.z); }
+  for (let a = 0; insideBuilding(player.x, player.z, player.y + 0.1) && a < 60; a++) { player.x += Math.cos(a) * a; player.z += Math.sin(a) * a; player.y = Math.max(ground(player.x, player.z), deckAt(player.x, player.z)); }
   for (const id of ['walk', 'bike', 'moto', 'fly']) $('p-' + id).setAttribute('aria-pressed', id === m);
 }
 // hover: the bicycle or motorbike lifts off and flies
@@ -968,7 +1014,7 @@ function tick() {
   player.x = Math.max(T.x0 + 5, Math.min(X1 - 5, player.x));
   player.z = Math.max(T.z0 + 5, Math.min(Z1 - 5, player.z));
 
-  const g = ground(player.x, player.z);
+  const g = Math.max(ground(player.x, player.z), deckAt(player.x, player.z));
   if (airborne) {
     player.y = Math.max(player.y, g + (player.hover ? 0.4 : 2));
     const roof = insideBuilding(player.x, player.z, -Infinity); if (roof) player.y = Math.max(player.y, roof.top + 2);
