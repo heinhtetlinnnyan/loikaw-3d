@@ -9,8 +9,9 @@ const MODES = {
   moto: { eye: 1.35, speed: 11.1, run: 19.4, label: 'Riding', ride: { accel: 4.5, coast: 1.5, brake: 10, lean: 0.022 } },
   fly:  { eye: 60,   speed: 25,  run: 90,  label: 'Flying' },
 };
-const ROAD_W = { trunk: 9, primary: 8, secondary: 7, tertiary: 6.5, unclassified: 5, residential: 4.5, service: 3, track: 2.6, footway: 1.6, path: 1.4 };
-const ROAD_C = { trunk: 0x6b6560, primary: 0x6b6560, tertiary: 0x77706a, unclassified: 0x837b72, residential: 0x8a8278, service: 0x948b80, track: 0x9b7f5e, footway: 0xa89a86, path: 0xa0805c };
+// widths and colours from aerial views: pale concrete main roads, dusty concrete and dirt side streets
+const ROAD_W = { trunk: 13, primary: 10, secondary: 8, tertiary: 7, unclassified: 5.5, residential: 5, service: 3, track: 2.8, footway: 1.6, path: 1.4 };
+const ROAD_C = { trunk: 0xb4ab98, primary: 0xb0a794, tertiary: 0xa89f8c, unclassified: 0xa49a86, residential: 0xa59a85, service: 0xa39886, track: 0xa48463, footway: 0xb0a28c, path: 0xa0805c };
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('scene');
@@ -84,13 +85,20 @@ await step('Shaping the valley…');
   g.rotateX(-Math.PI / 2);
   g.translate((T.x0 + X1) / 2, 0, (T.z0 + Z1) / 2);
   const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
-  const low = new THREE.Color(0x7d8f55), mid = new THREE.Color(0x5f7a45), high = new THREE.Color(0x8a7a5c), c = new THREE.Color();
+  const low = new THREE.Color(0x7d8f55), mid = new THREE.Color(0x5f7a45), high = new THREE.Color(0x8a7a5c), dust = new THREE.Color(0x9c8e74), c = new THREE.Color();
+  // how built-up each terrain cell is: bare dusty earth between houses, grass in the fields
+  const built = new Float32Array(T.w * T.h);
+  for (const b of data.buildings) {
+    const i = Math.round((b.p[0] - T.x0) / T.step), j = Math.round((b.p[1] - T.z0) / T.step);
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ii = i + di, jj = j + dj; if (ii >= 0 && jj >= 0 && ii < T.w && jj < T.h) built[jj * T.w + ii] += di || dj ? 0.5 : 1; }
+  }
   let hmax = 0; for (const v of H) hmax = Math.max(hmax, v);
   for (let k = 0; k < pos.count; k++) {
     const x = pos.getX(k), z = pos.getZ(k), y = ground(x, z);
     pos.setY(k, y);
     const t = y / hmax;
     c.copy(low).lerp(mid, Math.min(1, t * 2.2)).lerp(high, Math.max(0, t - 0.55) * 1.8);
+    c.lerp(dust, Math.min(0.85, built[k] / 4)); // PlaneGeometry vertices follow the terrain grid, row by row
     const n = (Math.sin(x * 0.07) * Math.cos(z * 0.05) + Math.sin(x * 0.013 + z * 0.017)) * 0.03;
     col.set([c.r + n, c.g + n, c.b + n * 0.5], k * 3);
   }
@@ -134,7 +142,7 @@ function ribbonMesh(items, widthOf, colorOf, lift, order) {
 const roadRank = (t) => ['path', 'footway', 'track', 'service', 'residential', 'unclassified', 'tertiary', 'secondary', 'primary', 'trunk'].indexOf(t);
 const roadsSorted = [...data.roads].sort((a, b) => roadRank(a.t) - roadRank(b.t));
 ribbonMesh(roadsSorted, (r) => ROAD_W[r.t] ?? 4, (r) => ROAD_C[r.t] ?? 0x8a8278, (r) => 0.25 + roadRank(r.t) * 0.01, 2);
-ribbonMesh(data.waterLines, (w) => (w.t === 'river' ? 28 : w.t === 'canal' ? 5 : 3), () => 0x4f7f95, () => 0.15, 1);
+ribbonMesh(data.waterLines, (w) => (w.t === 'river' ? 46 : w.t === 'canal' ? 5 : 3), () => 0x4f7f95, () => 0.15, 1);
 
 // ---------- flat polygons (lakes, green areas) ----------
 function flatPolys(list, color, lift) {
@@ -757,6 +765,50 @@ function drawClock(h) {
   const ring = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) ring.push(CLX + Math.cos(a) * 4.8, CLZ + Math.sin(a) * 4.8);
   const f = { p: ring, cx: CLX, cz: CLZ, r: 5, top: g0 + 16.5, base: g0, name: 'Clock Tower' };
   footprints.push(f); for (const dx of [-6, 6]) for (const dz of [-6, 6]) if (!bHash.get(key(CLX + dx, CLZ + dz))?.includes(f)) push(bHash, key(CLX + dx, CLZ + dz), f);
+}
+
+// ---------- trees ----------
+// Aerial views show big shady trees in most yards. Place them near houses (never inside a
+// house, on a road or in the river), plus a scattering over the fields. Two instanced meshes.
+await step('Planting trees…');
+{
+  const occupied = new Set(), cell = (x, z) => (Math.round(x / 3) + 4000) * 10000 + Math.round(z / 3) + 4000;
+  const stamp = (p, half) => {
+    for (let i = 0; i < p.length - 2; i += 2) {
+      const ax = p[i], az = p[i + 1], bx = p[i + 2], bz = p[i + 3], L = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / L, nz = (bx - ax) / L;
+      for (let d = 0; d <= L; d += 2) for (let o = -half; o <= half; o += 2) occupied.add(cell(ax + (bx - ax) * d / L + nx * o, az + (bz - az) * d / L + nz * o));
+    }
+  };
+  for (const r of data.roads) stamp(r.p, (ROAD_W[r.t] ?? 4) / 2 + 1.5);
+  for (const w of data.waterLines) stamp(w.p, w.t === 'river' ? 26 : 4);
+  const spots = [];
+  const tryAt = (x, z, s, k) => {
+    if (x < T.x0 + 10 || x > X1 - 10 || z < T.z0 + 10 || z > Z1 - 10 || occupied.has(cell(x, z))) return;
+    if (insideBuilding(x, z, -1e9) || insideBuilding(x + 2, z, -1e9) || insideBuilding(x - 2, z, -1e9) || insideBuilding(x, z + 2, -1e9) || insideBuilding(x, z - 2, -1e9)) return;
+    spots.push(x, z, s, k); occupied.add(cell(x, z));
+  };
+  data.buildings.forEach((b, n) => {
+    for (let t = 0; t < 2; t++) {
+      if (rand(n + 71 + t * 13) > 0.7) continue;
+      const a = rand(n + 72 + t * 13) * Math.PI * 2, d = 7 + rand(n + 73 + t * 13) * 10;
+      tryAt(b.p[0] + Math.cos(a) * d, b.p[1] + Math.sin(a) * d, 0.8 + rand(n + 74 + t * 13) * 1.0, n + t * 50000);
+    }
+  });
+  for (let i = 0; i < 9000; i++) tryAt(T.x0 + rand(i + 5000) * (X1 - T.x0), T.z0 + rand(i + 7000) * (Z1 - T.z0), 0.7 + rand(i + 9000) * 0.8, i + 100000);
+  const count = spots.length / 4, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.35, 1, 6).translate(0, 0.5, 0), new THREE.MeshLambertMaterial({ color: 0x4a3a2c }), count);
+  const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), count);
+  const leaf = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const x = spots[i * 4], z = spots[i * 4 + 1], s = spots[i * 4 + 2], k = spots[i * 4 + 3], y = ground(x, z), h = 3 + 3 * s;
+    q.setFromAxisAngle(up, rand(k + 75) * 6.28);
+    trunks.setMatrixAt(i, m4.compose(v.set(x, y, z), q, sc.set(s, h, s)));
+    const r = 2.8 + 3.2 * s;
+    crowns.setMatrixAt(i, m4.compose(v.set(x, y + h + r * 0.35, z), q, sc.set(r, r * (0.6 + rand(k + 76) * 0.25), r * (0.85 + rand(k + 77) * 0.3))));
+    crowns.setColorAt(i, leaf.setHSL(0.25 + rand(k + 78) * 0.07, 0.42 + rand(k + 79) * 0.18, 0.13 + rand(k + 80) * 0.08));
+  }
+  scene.add(trunks, crowns);
+  console.info(`Trees: ${count}`);
 }
 
 // ---------- time of day ----------
