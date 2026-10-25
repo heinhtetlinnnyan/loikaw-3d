@@ -795,6 +795,18 @@ await step('Planting trees…');
     }
   });
   for (let i = 0; i < 9000; i++) tryAt(T.x0 + rand(i + 5000) * (X1 - T.x0), T.z0 + rand(i + 7000) * (Z1 - T.z0), 0.7 + rand(i + 9000) * 0.8, i + 100000);
+  // forest: the hills around town (more than ~35 m above the valley floor) are wooded wherever
+  // nobody has built, as in aerial views; low empty ground gets a few scattered trees
+  const nearHouses = new Set(), hk = (x, z) => (Math.floor(x / 30) + 400) * 1000 + Math.floor(z / 30) + 400;
+  for (const b of data.buildings) for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) nearHouses.add(hk(b.p[0] + dx * 30, b.p[1] + dz * 30));
+  const forest = [], gap = LOW_GFX ? 26 : 17;
+  for (let x = T.x0 + 20; x < X1 - 20; x += gap) for (let z = T.z0 + 20; z < Z1 - 20; z += gap) {
+    const k = x * 7.13 + z * 3.71, jx = x + (rand(k) - 0.5) * gap * 0.8, jz = z + (rand(k + 1) - 0.5) * gap * 0.8;
+    if (nearHouses.has(hk(jx, jz))) continue;
+    const hgt = ground(jx, jz), pr = 0.06 + 0.9 * Math.max(0, Math.min(1, (hgt - 30) / 14));
+    if (rand(k + 2) > pr || occupied.has(cell(jx, jz))) continue;
+    forest.push(jx, jz, 0.8 + rand(k + 3) * 0.6, k);
+  }
   const count = spots.length / 4, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
   const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.35, 1, 6).translate(0, 0.5, 0), new THREE.MeshLambertMaterial({ color: 0x4a3a2c }), count);
   const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), count);
@@ -808,7 +820,16 @@ await step('Planting trees…');
     crowns.setColorAt(i, leaf.setHSL(0.25 + rand(k + 78) * 0.07, 0.42 + rand(k + 79) * 0.18, 0.13 + rand(k + 80) * 0.08));
   }
   scene.add(trunks, crowns);
-  console.info(`Trees: ${count}`);
+  // forest crowns only (trunks are hidden under the canopy anyway), low-poly to stay light
+  const fc = forest.length / 4, woods = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), fc);
+  for (let i = 0; i < fc; i++) {
+    const x = forest[i * 4], z = forest[i * 4 + 1], s = forest[i * 4 + 2], k = forest[i * 4 + 3], r = gap * 0.5 * s + 2;
+    q.setFromAxisAngle(up, rand(k + 4) * 6.28);
+    woods.setMatrixAt(i, m4.compose(v.set(x, ground(x, z) + r * 0.7, z), q, sc.set(r, r * (0.7 + rand(k + 5) * 0.3), r)));
+    woods.setColorAt(i, leaf.setHSL(0.26 + rand(k + 6) * 0.06, 0.4 + rand(k + 7) * 0.15, 0.11 + rand(k + 8) * 0.07));
+  }
+  scene.add(woods);
+  console.info(`Trees: ${count} in town, ${fc} in the forest`);
 }
 
 // ---------- time of day ----------

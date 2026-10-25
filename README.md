@@ -42,7 +42,7 @@ On a phone: joystick bottom-left, drag anywhere to look.
 
 **Buildings** get painted facades (plaster houses, shophouses along the main roads, teak houses, concrete blocks) and hipped tin roofs in the blue, green, red and grey seen around town. These are typical styles, not the real look of each building.
 
-**Town texture**: compared against aerial views, the town gets about 25,000 shady trees around houses and over the fields, dusty bare ground where houses cluster, a ~46 m wide Balu Chaung, and pale concrete and dirt roads. Trees are placed by rules, not traced from imagery.
+**Town texture**: compared against aerial views, the town gets about 25,000 shady trees around houses and over the fields, forest on the hills where nobody has built (about 50,000 low-poly crowns), dusty bare ground where houses cluster, a ~46 m wide Balu Chaung, and pale concrete and dirt roads. Trees are placed by rules, not traced from imagery.
 
 **Thadingyut**: paper lanterns and candles along the main route (Myo Nan → clock tower → ရှမ်းပိုင်းတံတား → သီရိမင်္ဂလာဈေး), strings of lights and candles at the pagodas and clock tower, and candles at a few homes, under a full moon.
 
