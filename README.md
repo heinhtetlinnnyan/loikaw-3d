@@ -40,6 +40,8 @@ On a phone: joystick bottom-left, drag anywhere to look.
 
 - **BEHS No. 1 / အထက ၁**: laid out from its aerial view: long one-storey classroom blocks with low gabled tin roofs in rust, grey, green and blue-grey, a white wall and gate on the road, a paved front yard and a walkway running north between the blocks.
 
+- **အထက ၇ (formerly အလက ၄)** and **အထက ၅ (formerly အလက ၁)**: classroom blocks with low gabled roofs in the colours of their aerial views, playing fields, yards and walls along the roads.
+
 **Buildings** get painted facades (plaster houses, shophouses along the main roads, teak houses, concrete blocks) and hipped tin roofs in the blue, green, red and grey seen around town. These are typical styles, not the real look of each building.
 
 **Town texture**: compared against aerial views, the town gets about 25,000 shady trees around houses and over the fields, forest on the hills where nobody has built (about 50,000 low-poly crowns), dusty bare ground where houses cluster, a ~46 m wide Balu Chaung, and pale concrete and dirt roads. Trees are placed by rules, not traced from imagery.

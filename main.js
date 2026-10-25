@@ -299,8 +299,26 @@ const OLD_HOME = toLocal(19.66659780912212, 97.21811179202088);
 // low gabled tin roofs (rust, grey, green, blue-grey) between the road on the south and the
 // road curving up the east side. Offsets are metres from the school's point.
 const SCHOOL1 = toLocal(19.676334437488862, 97.2142472032823);
-const SCHOOL1_AREA = [[-62, -136], [100, -136], [108, -32], [77, 23], [-41, 46], [-62, 48]].flatMap(([x, z]) => [SCHOOL1[0] + x, SCHOOL1[1] + z]);
+const SCHOOL1_AREA_REL = [[-62, -136], [100, -136], [108, -32], [77, 23], [-41, 46], [-62, 48]];
 const SCHOOL1_ROOFS = [0x8a4a3a, 0x7d4434, 0x96563f, 0x7a7f86, 0x5d6670, 0x6a7890, 0x8a9097];
+// BEHS No. 7 (အထက ၇, formerly အလက ၄): campus outline from OpenStreetMap, pond on the west and
+// north. Red-roofed classroom blocks, a grey block down the east side. Offsets from the
+// campus centre.
+const SCHOOL7 = (() => { const [x, z] = toLocal(19.67457, 97.21997); return [x, z]; })();
+const SCHOOL7_AREA = [[-21, -149], [111, -152], [117, 149], [-36, 189], [-57, 96], [-52, 25], [-40, -7]];
+// BEHS No. 5 (အထက ၅, formerly အလက ၁), from its aerial view: between roads on the south, west
+// and east, with the river beyond the trees to the north. Roofs in rust, red, pale green,
+// grey-blue and grey. Offsets from the school's point.
+const SCHOOL5 = toLocal(19.66965196232976, 97.2219446871272);
+const SCHOOL5_AREA = [[-42, -150], [110, -150], [119, 20], [-42, 34]];
+const SCHOOL5_ROOFS = [0x9a4a35, 0xb0503c, 0x7d4434, 0x7fa58c, 0x8fb39a, 0x5a6a80, 0x9aa0a6];
+const campusOf = (cx, cz) => {
+  for (const [c, area] of [[SCHOOL1, SCHOOL1_AREA_REL], [SCHOOL7, SCHOOL7_AREA], [SCHOOL5, SCHOOL5_AREA]]) {
+    const dx = cx - c[0], dz = cz - c[1];
+    if (Math.abs(dx) < 160 && Math.abs(dz) < 200 && inPoly(dx, dz, area.flat())) return c;
+  }
+  return null;
+};
 const footprints = []; // for collision
 let estimated = 0;
 const INSTITUTION = new Set(['school', 'hospital', 'university', 'stadium', 'grandstand', 'train_station', 'church', 'college', 'government', 'office', 'commercial']);
@@ -321,12 +339,12 @@ data.buildings.forEach((b, n) => {
   area = Math.abs(area);
 
   let style = 'house', h = b.h, riseK = 0.55, gable = false;
-  const isSchool1 = area > 120 && Math.abs(cx - SCHOOL1[0]) < 115 && Math.abs(cz - SCHOOL1[1]) < 140 && inPoly(cx, cz, SCHOOL1_AREA);
+  const campus = area > 120 ? campusOf(cx, cz) : null, isSchool1 = campus === SCHOOL1;
   const isOldHome = Math.abs(cx - OLD_HOME[0]) < 12 && Math.abs(cz - OLD_HOME[1]) < 12 && inPoly(OLD_HOME[0], OLD_HOME[1], p);
   const isMarket = cx > MK_X0 && cx < MK_X1 && cz > MK_Z0 && cz < MK_Z1 && inPoly(cx, cz, MARKET);
   if (isMarket) { style = 'shop'; if (!h) h = 4.4 + rand(n + 3) * 0.6; }
   else if (isOldHome) { h = 3.6; riseK = 0.22; }
-  else if (isSchool1) { style = 'block'; h = h || (area > 480 && Math.hypot(cx - SCHOOL1[0] - 41, cz - SCHOOL1[1] - 2) < 8 ? 7.2 : 4.3); riseK = 0.3; gable = true; }
+  else if (campus) { style = 'block'; h = h || (isSchool1 && area > 480 && Math.hypot(cx - SCHOOL1[0] - 41, cz - SCHOOL1[1] - 2) < 8 ? 7.2 : 4.3); riseK = 0.3; gable = true; }
   else if ((b.s === 'osm' && INSTITUTION.has(b.k)) || area > 1500) style = 'block';
   else if (nearMain(cx, cz) && area < 450) style = 'shop';
   else if (rand(n + 31) < 0.3) style = 'wood';
@@ -340,6 +358,12 @@ data.buildings.forEach((b, n) => {
   const roofs = isMarket ? MARKET_ROOFS : ROOFS;
   roofC.setHex(roofs[(rand(n + 13) * roofs.length) | 0]).multiplyScalar(0.85 + rand(n + 14) * 0.3);
   if (isOldHome) { paint.setHex(0xd6d3cb); roofC.setHex(0x8f949a); }
+  if (campus === SCHOOL5) { paint.setHex(0xf1ece0); roofC.setHex(SCHOOL5_ROOFS[(rand(n + 19) * SCHOOL5_ROOFS.length) | 0]); }
+  if (campus === SCHOOL7) {
+    paint.setHex(0xf1ece0);
+    const dx = cx - SCHOOL7[0];
+    roofC.setHex(dx > 60 ? 0xa0a4a8 : 0xb0503c).multiplyScalar(0.9 + rand(n + 18) * 0.15); // grey east block, red classrooms
+  }
   if (isSchool1) {
     paint.setHex(0xf1ece0);
     const dx = cx - SCHOOL1[0], dz = cz - SCHOOL1[1];
@@ -375,7 +399,7 @@ data.buildings.forEach((b, n) => {
       }
       for (const e of [-L, L]) tri(buckets.roof, P(e, v0, top), P(e, v1, top), P(e, vc, top + rise), [0, 0], [bw / s, 0], [bw / 2 / s, rise / s], roofC);
     }
-  } else if (m === 4 && ((style !== 'block' && area < 900) || isSchool1)) {
+  } else if (m === 4 && ((style !== 'block' && area < 900) || campus)) {
     // fit a rectangle: long axis from the longest edge
     let best = 0, ux = 1, uz = 0;
     for (let i = 0; i < 4; i++) { const dx = p[((i + 1) % 4) * 2] - p[i * 2], dz = p[((i + 1) % 4) * 2 + 1] - p[i * 2 + 1], L = Math.hypot(dx, dz); if (L > best) { best = L; ux = dx / L; uz = dz / L; } }
@@ -608,9 +632,10 @@ const LANDMARKS = [
   ['Loikaw University', 'လွိုင်ကော်တက္ကသိုလ်', 19.69339, 97.19723, 0],
   ['Technological University', 'နည်းပညာတက္ကသိုလ်', 19.6546, 97.2086, 0],
   ['Computer University', 'ကွန်ပြူတာတက္ကသိုလ်', 19.69641, 97.22059, 0],
-  ['BEHS No. 7', 'အထက ၇', 19.6744, 97.22025, 0],
-  ['BEHS No. 1', 'အထက ၁', 19.676334437488862, 97.2142472032823, 0],
-  ['BEHS No. 2', 'အထက ၂', 19.68586827132356, 97.20741829923378, 0],
+  ['အထက ၇', 'ယခင် အလက ၄', 19.6744, 97.22025, 0],
+  ['အထက ၅', 'ယခင် အလက ၁', 19.66965196232976, 97.2219446871272, 0],
+  ['အထက ၁', 'BEHS No. 1', 19.676334437488862, 97.2142472032823, 0],
+  ['အထက ၂', 'BEHS No. 2', 19.68586827132356, 97.20741829923378, 0],
   ['ရှမ်းပိုင်းတံတား', 'ဂျပန်တံတား', 19.668754950575565, 97.21451005967769, 4],
   ['သီရိမင်္ဂလာဈေး', null, 19.666788, 97.21447, 0],
   ['ဝိုင်းဘို အိမ်', null, 19.672848670108113, 97.21654757553394, -4],
@@ -686,6 +711,43 @@ const OLD_GATE = [-19.2, -35.8], OLD_DRIVE = [[-19.2, -35.8], [-17.0, -9.2], [-1
   ribbonMesh([{ p: [...at(along(3)), ...at([3, 6])] }], () => 6, () => pave, () => 0.3, 3);         // gate to the yard
   ribbonMesh([{ p: [...at([-28, 18]), ...at([30, 12])] }], () => 22, () => pave, () => 0.28, 3);   // front yard
   ribbonMesh([{ p: [...at([8, 4]), ...at([10, -128])] }], () => 4, () => pave, () => 0.3, 3);       // walkway north
+}
+
+// BEHS No. 5 grounds: walls along the south and west roads with a gate on the south, and a
+// dusty yard on the west side
+{
+  const at = ([x, z]) => [SCHOOL5[0] + x, SCHOOL5[1] + z];
+  ribbonMesh([{ p: [...at([-22, -60]), ...at([-22, 22])] }], () => 34, () => 0xa98a62, () => 0.22, 2);
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0xe6e1d6 });
+  const wall = ([ax, az], [bx, bz]) => {
+    const L = Math.hypot(bx - ax, bz - az), m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.6, L), wallMat);
+    m.position.set((ax + bx) / 2, ground((ax + bx) / 2, (az + bz) / 2) + 0.7, (az + bz) / 2); m.rotation.y = Math.atan2(bx - ax, bz - az); scene.add(m);
+  };
+  // the south road runs from (-45, 38) to (124, 14); the wall sits 5 m inside it
+  const south = (x) => [x, 38 - 5 + (14 - 38) * (x + 45) / 169];
+  wall(at(south(-40)), at(south(-12))); wall(at(south(-5)), at(south(112)));
+  wall(at([-40, -148]), at(south(-40)));
+}
+
+// BEHS No. 7 grounds: dirt football field to the north, a grassy field and a paved court
+// in the middle, paths between the blocks, walls along the south and east roads
+{
+  const at = ([x, z]) => [SCHOOL7[0] + x, SCHOOL7[1] + z];
+  const patch = (x0, z0, x1, z1, color) => ribbonMesh([{ p: [...at([(x0 + x1) / 2, z0]), ...at([(x0 + x1) / 2, z1])] }], () => x1 - x0, () => color, () => 0.22, 2);
+  patch(24, -128, 93, -33, 0xa98a62);  // football field
+  patch(9, 48, 68, 110, 0x6f8f4a);     // grass field
+  patch(7, 11, 64, 44, 0xc9c4ba);      // paved court
+  const path = (a, b) => ribbonMesh([{ p: [...at(a), ...at(b)] }], () => 3, () => 0xc9c4ba, () => 0.3, 3);
+  path([5, 4], [5, 172]); path([5, 9.5], [72, 9.5]); path([5, 112], [72, 112]);
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0xe6e1d6 });
+  const wall = ([ax, az], [bx, bz]) => {
+    const L = Math.hypot(bx - ax, bz - az), m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.6, L), wallMat);
+    m.position.set((ax + bx) / 2, ground((ax + bx) / 2, (az + bz) / 2) + 0.7, (az + bz) / 2); m.rotation.y = Math.atan2(bx - ax, bz - az); scene.add(m);
+  };
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const SE = [117, 149], SW = [-36, 189], NE = [111, -152];
+  wall(at(NE), at(SE));                                                             // east road
+  wall(at(SE), at(lerp(SE, SW, 0.72))); wall(at(lerp(SE, SW, 0.78)), at(SW));       // south road, gate by the path
 }
 
 // ရှမ်းပိုင်းတံတား, also called ဂျပန်တံတား, carrying NH21 over the Balu Chaung: a steel Warren truss
