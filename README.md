@@ -14,6 +14,8 @@ Walk, cycle, ride a motorbike or fly around Loikaw (လွိုင်ကော�
 | `Space` | jump (walk) · climb (fly) |
 | `C` | descend (fly) |
 | `1` `2` `3` `4` | walk · bicycle · motorbike · fly |
+| `F` | take off / land on the bicycle or motorbike (then Space/C or look up/down to climb) |
+| `T` | let time run (one hour every 30 seconds) · `[` `]` an hour back/forward |
 | `M` | bigger map; click the map to jump there |
 
 On a phone: joystick bottom-left, drag anywhere to look.
@@ -23,6 +25,8 @@ On a phone: joystick bottom-left, drag anywhere to look.
 - **Streets, rivers, lakes, named places, ~240 buildings**: [OpenStreetMap](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors, ODbL.
 - **~23,000 more building outlines**: [Microsoft Global ML Building Footprints](https://github.com/microsoft/GlobalMLBuildingFootprints), traced from satellite imagery, ODbL. These have no height information, so heights are estimated (mostly one or two storeys).
 - **Terrain**: [Mapzen / AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM-based, ~30 m).
+
+**Taung Kwe Pagoda** is a hand-made model placed at its real location (19.6675° N, 97.2081° E); its shape is an approximation, not a survey.
 
 Satellite imagery and OSM edits come from different years, so some buildings may no longer stand, or may be missing.
 

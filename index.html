@@ -28,14 +28,22 @@
     <button class="mode" data-mode="moto" id="m-moto"><b>Motorbike</b><span>40 km/h · 70 with Shift</span></button>
     <button class="mode" data-mode="fly" id="m-fly"><b>Fly</b><span>Space up · C down</span></button>
   </div>
-  <p class="keys">WASD or arrows to move · mouse to look · 1 2 3 4 switch mode · M map · Esc pause</p>
+  <p class="keys">WASD or arrows to move · mouse to look · 1 2 3 4 switch mode · F take off on a bike · T or [ ] change the time · M map · Esc pause</p>
   <p id="loading" class="loading">Loading the town…</p>
 </div>
 
 <div id="hud" class="hud" hidden>
-  <div class="where panel">
-    <span id="street" class="street">—</span>
-    <span id="meta" class="meta"></span>
+  <div class="topleft">
+    <div class="where panel">
+      <span id="street" class="street">—</span>
+      <span id="meta" class="meta"></span>
+    </div>
+    <div class="clock panel">
+      <label for="time">Loikaw time</label>
+      <input type="range" id="time" min="0" max="24" step="0.25" value="12">
+      <output id="time-label" for="time">12:00</output>
+      <button id="time-play" class="pill" aria-pressed="false">Play</button>
+    </div>
   </div>
   <div class="mode-pills panel">
     <button data-mode="walk" class="pill" id="p-walk">Walk</button>
@@ -43,6 +51,7 @@
     <button data-mode="moto" class="pill" id="p-moto">Motorbike</button>
     <button data-mode="fly" class="pill" id="p-fly">Fly</button>
   </div>
+  <button id="hover" class="hover-btn panel" aria-pressed="false" hidden>Take off (F)</button>
   <canvas id="minimap" class="minimap panel" width="220" height="220" aria-label="Map. Click to jump there."></canvas>
   <p class="credit">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · buildings also from <a href="https://github.com/microsoft/GlobalMLBuildingFootprints" target="_blank" rel="noopener">Microsoft Building Footprints</a> (ODbL) · terrain: Mapzen/AWS Terrain Tiles</p>
 </div>

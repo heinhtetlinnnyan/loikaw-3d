@@ -26,10 +26,13 @@ scene.fog = new THREE.Fog(SKY, 400, 4200);
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 9000);
 camera.rotation.order = 'YXZ';
 
-scene.add(new THREE.HemisphereLight(0xdfe9f2, 0x5b5040, 1.1));
+const hemi = new THREE.HemisphereLight(0xdfe9f2, 0x5b5040, 1.1);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1dc, 1.6);
 sun.position.set(-1200, 1600, 600);
 scene.add(sun);
+const moon = new THREE.DirectionalLight(0x9fb4e0, 0);
+scene.add(moon);
 
 // ---------- data ----------
 const data = await (await fetch('data/loikaw.json')).json();
@@ -154,11 +157,55 @@ data.buildings.forEach((b, n) => {
   g.deleteAttribute('uv');
   bgeo.push(g);
   let r = 0; for (let i = 0; i < b.p.length; i += 2) r = Math.max(r, Math.hypot(b.p[i] - cx, b.p[i + 1] - cz));
-  footprints.push({ p: b.p, cx, cz, r, top: ymin + h, name: b.n, kind: b.k });
+  footprints.push({ p: b.p, cx, cz, r, top: ymin + h, base: ymin, name: b.n, kind: b.k });
 });
 for (let i = 0; i < bgeo.length; i += 2000) {
   const g = mergeGeometries(bgeo.slice(i, i + 2000));
   scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })));
+}
+
+// ---------- Taung Kwe Pagoda: gilded stupas on a split limestone rock ----------
+const toLocal = (lat, lon) => [(lon - data.origin[1]) * 111320 * Math.cos(data.origin[0] * Math.PI / 180), -(lat - data.origin[0]) * 110540];
+const [TKX, TKZ] = toLocal(19.6675, 97.2081);
+const gold = new THREE.MeshStandardMaterial({ color: 0xd9a92e, metalness: 0.55, roughness: 0.32, emissive: 0x6a4708, emissiveIntensity: 0 });
+{
+  const rockMat = new THREE.MeshLambertMaterial({ color: 0xa39d92, flatShading: true });
+  const white = new THREE.MeshLambertMaterial({ color: 0xf2eee6 });
+  const g0 = ground(TKX, TKZ);
+  const tk = new THREE.Group(); tk.position.set(TKX, g0 - 2, TKZ); scene.add(tk);
+  // craggy rock: noisy icosahedra, stretched upward
+  const crag = (r, h, x, z, seed) => {
+    const g = new THREE.IcosahedronGeometry(r, 2), p = g.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      const n = 1 + 0.22 * Math.sin(v.x * 1.7 + seed) * Math.cos(v.z * 1.3 + seed * 2) + 0.12 * Math.sin(v.y * 3.1 + seed);
+      v.multiplyScalar(n); v.y = Math.max(v.y, -r * 0.2) * (h / r);
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, rockMat); m.position.set(x, 0, z); tk.add(m);
+  };
+  crag(30, 12, 0, 0, 1);       // base mound
+  crag(11, 34, -8, -3, 2);     // west peak
+  crag(10, 30, 9, 3, 3);       // east peak (the "split")
+  crag(7, 20, 2, -14, 4);
+  // Burmese stupa profile: terraces, bell, bands, lotus, banana bud
+  const prof = [[0, 0], [3, 0], [3, .8], [2.6, .8], [2.6, 1.6], [2.2, 1.6], [2.2, 2.4], [2.05, 2.6], [2.15, 3.3], [2, 4], [1.7, 4.6], [1.2, 5], [1.05, 5.2], [.95, 5.6], [.7, 5.8], [.8, 6], [.5, 6.4], [.46, 6.8], [.32, 7.4], [.14, 7.9], [.05, 8.3], [0, 8.4]];
+  const stupaGeo = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 28);
+  const stupa = (x, y, z, s) => {
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(8 * s, 1.2 * s, 8 * s), white); plinth.position.set(x, y + 0.6 * s, z); tk.add(plinth);
+    const st = new THREE.Mesh(stupaGeo, gold); st.scale.setScalar(s * 1.4); st.position.set(x, y + 1.2 * s, z); tk.add(st);
+    const hti = new THREE.Mesh(new THREE.ConeGeometry(0.35 * s, 1 * s, 12), gold); hti.position.set(x, y + 1.2 * s + 12.2 * s, z); tk.add(hti);
+  };
+  stupa(-8, 33, -3, 1.1);
+  stupa(9, 29, 3, 0.8);
+  // covered stairway climbing the south face
+  for (let i = 0; i < 14; i++) {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 2.6), white);
+    step.position.set(-2 + i * 0.2, 2 + i * 2, 26 - i * 1.6); tk.add(step);
+  }
+  const ring = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) ring.push(TKX + Math.cos(a) * 16, TKZ + Math.sin(a) * 12);
+  footprints.push({ p: ring, cx: TKX, cz: TKZ, r: 17, top: g0 + 44, base: g0, name: 'Taung Kwe Pagoda' });
 }
 
 // ---------- spatial hashes ----------
@@ -232,17 +279,116 @@ for (const p of data.places) {
 }
 const city = data.places.find((p) => p.k === 'city');
 if (city) label('Loikaw', city.my, city.x, city.z, true);
+label('Taung Kwe Pagoda', 'တောင်ကွဲစေတီ', TKX, TKZ, false);
+labelGroup.children.at(-1).position.y += 36;
+
+// ---------- time of day ----------
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const glowPoints = (pos, color, size, atten = true) => {
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({ color, size, map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: atten, opacity: 0, fog: atten });
+  const p = new THREE.Points(g, m); scene.add(p); return p;
+};
+// streetlights every ~40 m along the bigger roads, on alternating sides
+const lamps = [];
+for (const r of data.roads) {
+  if (roadRank(r.t) < 4) continue;
+  let acc = 0, side = 1;
+  for (let i = 0; i < r.p.length - 2; i += 2) {
+    const ax = r.p[i], az = r.p[i + 1], bx = r.p[i + 2], bz = r.p[i + 3], L = Math.hypot(bx - ax, bz - az) || 1;
+    for (let d = 40 - acc; d < L; d += 40) {
+      const x = ax + (bx - ax) * d / L - (bz - az) / L * side * ((ROAD_W[r.t] ?? 4) / 2 + 0.5), z = az + (bz - az) * d / L + (bx - ax) / L * side * ((ROAD_W[r.t] ?? 4) / 2 + 0.5);
+      lamps.push(x, ground(x, z) + 5.5, z); side = -side;
+    }
+    acc = (acc + L) % 40;
+  }
+}
+const streetLights = glowPoints(lamps, 0xffb860, 7);
+// lit windows: a glow on one or two walls of about half the houses
+const win = [];
+footprints.forEach((f, n) => {
+  if (!f.base || rand(n + 21) > 0.5) return;
+  for (let k = 0; k < (rand(n + 22) > 0.6 ? 2 : 1); k++) {
+    const m = f.p.length / 2, i = ((rand(n + 23 + k) * m) | 0) * 2, j = (i + 2) % f.p.length;
+    const mx = (f.p[i] + f.p[j]) / 2, mz = (f.p[i + 1] + f.p[j + 1]) / 2, dx = mx - f.cx, dz = mz - f.cz, L = Math.hypot(dx, dz) || 1;
+    win.push(mx + dx / L * 0.3, f.base + 2.2, mz + dz / L * 0.3);
+  }
+});
+const windows = glowPoints(win, 0xffd28a, 2.6);
+// stars on a dome around the camera
+const starPos = [];
+for (let i = 0; i < 1800; i++) {
+  const a = rand(i + 500) * Math.PI * 2, e = Math.asin(rand(i + 900) * 0.98 + 0.02);
+  starPos.push(Math.cos(a) * Math.cos(e) * 5000, Math.sin(e) * 5000, Math.sin(a) * Math.cos(e) * 5000);
+}
+const stars = glowPoints(starPos, 0xdfe6ff, 2.2, false);
+// sun and moon discs
+const disc = (color, size) => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, fog: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending })); s.scale.setScalar(size); scene.add(s); return s; };
+const sunDisc = disc(0xfff2c8, 520), moonDisc = disc(0xdfe6ff, 260);
+// headlight for the bicycle and motorbike
+const headlight = new THREE.SpotLight(0xfff0d0, 0, 140, 0.42, 0.55, 1);
+camera.add(headlight); camera.add(headlight.target); headlight.position.set(0, -0.4, -1.3); headlight.target.position.set(0, -2.5, -20);
+
+const C = (h) => new THREE.Color(h);
+const SKY_NIGHT = C(0x0a1226), SKY_DAY = C(0xb9cbd8), SKY_GLOW = C(0xf0a070), SUN_LOW = C(0xffa060), SUN_HIGH = C(0xfff1dc);
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const sunDir = new THREE.Vector3();
+let night = 0;
+function setTime(h) {
+  // sun rises in the east (+x) at 06:00 and sets in the west at 18:00, a little to the south
+  const a = (h - 6) / 12 * Math.PI;
+  sunDir.set(Math.cos(a), Math.sin(a), 0.35).normalize();
+  const e = sunDir.y, day = smooth(-0.12, 0.25, e), glow = Math.exp(-(((e - 0.03) / 0.13) ** 2));
+  night = 1 - day;
+  const sky = SKY_NIGHT.clone().lerp(SKY_DAY, day).lerp(SKY_GLOW, glow * 0.55);
+  scene.background.copy(sky); scene.fog.color.copy(sky);
+  scene.fog.far = 2600 + 1600 * day;
+  hemi.intensity = 0.12 + 1.0 * day;
+  hemi.color.copy(C(0x6f7fa8).lerp(C(0xdfe9f2), day));
+  sun.position.copy(sunDir).multiplyScalar(2000);
+  sun.intensity = 1.7 * smooth(-0.02, 0.2, e);
+  sun.color.copy(SUN_LOW).lerp(SUN_HIGH, smooth(0, 0.35, e));
+  moon.position.copy(sunDir).multiplyScalar(-2000).setY(1500);
+  moon.intensity = 0.35 * night;
+  streetLights.material.opacity = smooth(0.3, 0.7, night);
+  windows.material.opacity = smooth(0.35, 0.8, night) * 0.9;
+  stars.material.opacity = smooth(0.6, 1, night);
+  gold.emissiveIntensity = night * 1.6;
+  sunDisc.material.opacity = smooth(-0.05, 0.02, e);
+  moonDisc.material.opacity = smooth(0.5, 0.9, night);
+}
+// Loikaw is UTC+6:30; start at the time it is there right now
+const nowMM = new Date(Date.now() + 6.5 * 3600e3);
+let hour = nowMM.getUTCHours() + nowMM.getUTCMinutes() / 60, timeFlows = false;
+const fmtHour = (h) => `${String(Math.floor(h) % 24).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+function showTime() {
+  setTime(hour);
+  $('time').value = hour;
+  $('time-label').textContent = fmtHour(hour);
+  $('time-play').textContent = timeFlows ? 'Pause' : 'Play';
+  $('time-play').setAttribute('aria-pressed', timeFlows);
+}
+$('time').addEventListener('input', (e) => { hour = +e.target.value; showTime(); });
+$('time-play').addEventListener('click', (e) => { e.stopPropagation(); timeFlows = !timeFlows; showTime(); });
+showTime();
 
 // ---------- player ----------
 const market = data.places.find((p) => p.n === 'Market') ?? city ?? { x: 0, z: 0 };
-const player = { x: market.x + 6, z: market.z + 6, y: 0, vy: 0, yaw: -Math.PI / 4, pitch: 0, speed: 0, mode: 'walk', onGround: true, roll: 0 };
+const player = { x: market.x + 6, z: market.z + 6, y: 0, vy: 0, yaw: -Math.PI / 4, pitch: 0, speed: 0, mode: 'walk', onGround: true, roll: 0, hover: false };
 player.y = ground(player.x, player.z);
 const keys = new Set();
 let started = false, mapBig = false;
 
 function setMode(m) {
   const prev = player.mode; player.mode = m;
-  if (!MODES[m].ride) player.speed = 0;
+  if (!MODES[m].ride) { player.speed = 0; player.hover = false; }
+  $('hover').hidden = !MODES[m].ride; showHover();
   vehicle.bike.visible = m === 'bike'; vehicle.moto.visible = m === 'moto';
   if (m === 'moto') engineOn();
   if (m === 'fly' && prev !== 'fly') { player.y = Math.max(player.y, ground(player.x, player.z) + 60); player.pitch = -0.35; }
@@ -251,6 +397,20 @@ function setMode(m) {
   for (let a = 0; insideBuilding(player.x, player.z, player.y + 0.1) && a < 60; a++) { player.x += Math.cos(a) * a; player.z += Math.sin(a) * a; player.y = ground(player.x, player.z); }
   for (const id of ['walk', 'bike', 'moto', 'fly']) $('p-' + id).setAttribute('aria-pressed', id === m);
 }
+// hover: the bicycle or motorbike lifts off and flies
+function showHover() {
+  const b = $('hover');
+  b.textContent = player.hover ? 'Land (F)' : 'Take off (F)';
+  b.setAttribute('aria-pressed', player.hover);
+}
+function toggleHover() {
+  if (!MODES[player.mode].ride) return;
+  player.hover = !player.hover;
+  if (player.hover) { player.vy = 0; player.y += 1.5; player.speed = Math.max(player.speed, 3); }
+  showHover();
+}
+$('hover').addEventListener('click', (e) => { e.stopPropagation(); toggleHover(); });
+
 function start(m) {
   started = true; $('intro').hidden = true; $('hud').hidden = false;
   if (matchMedia('(pointer: coarse)').matches) $('touch').hidden = false;
@@ -260,11 +420,16 @@ function start(m) {
 }
 document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); started ? setMode(b.dataset.mode) : start(b.dataset.mode); }));
 $('loading').hidden = true;
+// after a mouse click, give the keyboard back to the game so Space doesn't press the button again
+document.querySelectorAll('button, input').forEach((el) => el.addEventListener('pointerup', () => setTimeout(() => el.blur(), 0)));
 
 addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!started) return;
   if (e.code === 'Digit1') setMode('walk'); if (e.code === 'Digit2') setMode('bike'); if (e.code === 'Digit3') setMode('moto'); if (e.code === 'Digit4') setMode('fly');
+  if (e.code === 'KeyF') toggleHover();
+  if (e.code === 'KeyT') { timeFlows = !timeFlows; showTime(); }
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') { hour = (hour + (e.code === 'BracketLeft' ? 23 : 1)) % 24; showTime(); }
   if (e.code === 'KeyM') { mapBig = !mapBig; $('minimap').classList.toggle('big', mapBig); sizeMap(); }
   if (e.code === 'Space' && player.mode === 'walk' && player.onGround) { player.vy = 4.2; player.onGround = false; }
   if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -379,7 +544,7 @@ function engineOn() {
 function engineUpdate(throttle) {
   if (!engine.ctx) return;
   const on = player.mode === 'moto' && !document.hidden;
-  const rpm = 38 + player.speed * 4.2 + throttle * 14, t = engine.ctx.currentTime;
+  const rpm = (38 + player.speed * 4.2 + throttle * 14) * (player.hover ? 1.9 : 1), t = engine.ctx.currentTime;
   engine.osc.frequency.setTargetAtTime(rpm, t, 0.08);
   engine.osc2.frequency.setTargetAtTime(rpm / 2, t, 0.08);
   engine.filter.frequency.setTargetAtTime(500 + throttle * 700 + player.speed * 30, t, 0.1);
@@ -414,7 +579,8 @@ function tick() {
   const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
   if (M.ride) {
     // momentum: W to speed up, let go to coast, S brakes; A/D steer and lean
-    const R = M.ride, target = fwd > 0 ? (fast ? M.run : M.speed) : 0;
+    const boost = player.hover ? 1.8 : 1;
+    const R = M.ride, target = fwd > 0 ? (fast ? M.run : M.speed) * boost : 0;
     if (fwd < 0) player.speed -= R.brake * dt;
     else if (player.speed < target) player.speed = Math.min(target, player.speed + R.accel * dt);
     else player.speed = Math.max(target, player.speed - R.coast * dt);
@@ -423,6 +589,11 @@ function tick() {
     player.yaw += steer * dt;
     player.roll += ((side * Math.min(player.speed, 12) * R.lean) - player.roll) * Math.min(1, dt * 5);
     vx = -sy * player.speed; vz = -cy * player.speed;
+    if (player.hover) {
+      // nose up to climb, Space/C for straight up and down
+      const lift = (keys.has('Space') ? 1 : 0) - (keys.has('KeyC') || keys.has('ControlLeft') ? 1 : 0);
+      player.y += (Math.sin(player.pitch) * player.speed + lift * 7) * dt;
+    }
   } else {
     player.roll *= 0.9;
     const sp = fast ? M.run : M.speed, L = Math.hypot(fwd, side) || 1;
@@ -437,7 +608,8 @@ function tick() {
 
   // move with simple wall sliding
   const nx = player.x + vx * dt, nz = player.z + vz * dt;
-  const yCheck = player.mode === 'fly' ? player.y : player.y + 0.3;
+  const airborne = player.mode === 'fly' || player.hover;
+  const yCheck = airborne ? player.y : player.y + 0.3;
   if (!insideBuilding(nx, nz, yCheck)) { player.x = nx; player.z = nz; }
   else if (!insideBuilding(nx, player.z, yCheck)) player.x = nx;
   else if (!insideBuilding(player.x, nz, yCheck)) player.z = nz;
@@ -446,17 +618,17 @@ function tick() {
   player.z = Math.max(T.z0 + 5, Math.min(Z1 - 5, player.z));
 
   const g = ground(player.x, player.z);
-  if (player.mode === 'fly') {
-    player.y = Math.max(player.y, g + 2);
+  if (airborne) {
+    player.y = Math.max(player.y, g + (player.hover ? 0.4 : 2));
     const roof = insideBuilding(player.x, player.z, -Infinity); if (roof) player.y = Math.max(player.y, roof.top + 2);
   } else {
-    player.vy -= 12 * dt; player.y += player.vy * dt;
+    player.vy = Math.max(-15, player.vy - 12 * dt); player.y += player.vy * dt;
     if (player.y <= g) { player.y = g; player.vy = 0; player.onGround = true; }
   }
 
   const moving = M.ride ? player.speed / M.run : Math.min(1, Math.hypot(vx, vz) / M.speed);
   bob += dt * (player.mode === 'moto' ? 30 : player.mode === 'bike' ? 6 : fast ? 11 : 8) * (moving > 0.05 ? 1 : 0);
-  const bobY = player.mode === 'fly' ? 0 : Math.sin(bob) * (player.mode === 'moto' ? 0.006 : player.mode === 'bike' ? 0.02 : 0.05) * moving;
+  const bobY = airborne ? Math.sin(clock.elapsedTime * 2) * 0.08 : Math.sin(bob) * (player.mode === 'moto' ? 0.006 : player.mode === 'bike' ? 0.02 : 0.05) * moving;
   camera.position.set(player.x, player.y + (player.mode === 'fly' ? 0 : M.eye) + bobY, player.z);
   camera.rotation.set(player.pitch, player.yaw, -player.roll);
 
@@ -473,13 +645,18 @@ function tick() {
     hudT = 0;
     const r = nearestStreet(player.x, player.z);
     const street = $('street');
-    street.textContent = r ? r.n : player.mode === 'fly' ? 'Above Loikaw' : 'Off the named streets';
+    street.textContent = r && player.y - ground(player.x, player.z) < 40 ? r.n : airborne ? 'Above Loikaw' : 'Off the named streets';
     street.lang = r && /[က-႟]/.test(r.n) ? 'my' : 'en';
     const kmh = (M.ride ? player.speed : Math.hypot(vx, vz)) * 3.6;
     const lat = data.origin[0] - player.z / 110540, lon = data.origin[1] + player.x / (111320 * Math.cos(data.origin[0] * Math.PI / 180));
-    $('meta').textContent = `${M.label} · ${kmh.toFixed(0)} km/h · ${Math.round(BASE + player.y)} m elevation · ${lat.toFixed(4)}° N ${lon.toFixed(4)}° E`;
+    $('meta').textContent = `${M.label}${player.hover ? ' in the air' : ''} · ${kmh.toFixed(0)} km/h · ${Math.round(BASE + player.y)} m elevation · ${lat.toFixed(4)}° N ${lon.toFixed(4)}° E`;
   }
   engineUpdate(M.ride && fwd > 0 ? 1 : 0);
+  if (timeFlows) { hour = (hour + dt / 30) % 24; showTime(); } // one hour every 30 s
+  sunDisc.position.copy(camera.position).addScaledVector(sunDir, 4500);
+  moonDisc.position.copy(camera.position).addScaledVector(sunDir, -4500).setY(camera.position.y + 2200);
+  stars.position.copy(camera.position);
+  headlight.intensity = M.ride ? 60 * smooth(0.3, 0.7, night) : 0;
   // handlebars turn with the steering and tip into the lean
   for (const v of Object.values(vehicle)) v.rotation.set(0, -side * 0.12, player.roll * 0.6);
   drawMap();
