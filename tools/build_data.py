@@ -109,7 +109,7 @@ for e in osm:
             kind = t.get("place") or t.get("amenity") or t.get("tourism") or t.get("railway") or "poi"
             if kind in ("artwork",):
                 continue
-            places.append({"n": name, "my": t.get("name") if t.get("name:en") else None,
+            places.append({"n": name, "my": t.get("name:my") or (t.get("name") if t.get("name:en") else None),
                            "k": kind, "x": x, "z": z})
         continue
     g = geom(e)

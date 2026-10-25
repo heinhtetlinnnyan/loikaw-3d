@@ -239,6 +239,9 @@ const tri = (B, a, b, c, ua, ub, uc, col) => {
 const toLocal = (lat, lon) => [(lon - data.origin[1]) * 111320 * Math.cos(data.origin[0] * Math.PI / 180), -(lat - data.origin[0]) * 110540];
 // the clock tower stands on a roundabout: keep satellite-traced footprints off it
 const [CLX, CLZ] = toLocal(19.67717, 97.21201);
+// Myo Nan Pagoda's platform is in the satellite footprints; it's drawn as a pagoda instead of a house
+const [MNX, MNZ] = toLocal(19.677785, 97.211291);
+let myoNanPlatform = null;
 const footprints = []; // for collision
 let estimated = 0;
 const INSTITUTION = new Set(['school', 'hospital', 'university', 'stadium', 'grandstand', 'train_station', 'church', 'college', 'government', 'office', 'commercial']);
@@ -253,6 +256,7 @@ data.buildings.forEach((b, n) => {
   }
   cx /= m; cz /= m; area /= 2;
   if (Math.hypot(cx - CLX, cz - CLZ) < 9) return;
+  if (Math.hypot(cx - MNX, cz - MNZ) < 8 && m > 6) { myoNanPlatform = p; return; }
   // walls must wind so their faces point outwards
   const order = [...Array(m).keys()]; if (area > 0) order.reverse();
   area = Math.abs(area);
@@ -327,6 +331,9 @@ bucketMesh(buckets.flat, flatRoofMat);
 // stupa on top, smaller stupas and blue-roofed halls around it, and a tall white
 // lift tower crowned by a tiered gold pyatthat roof.
 const [TKX, TKZ] = toLocal(19.6675, 97.2081);
+// Burmese stupa profile: terraces, bell, bands, lotus, banana bud
+const prof = [[0, 0], [3, 0], [3, .8], [2.6, .8], [2.6, 1.6], [2.2, 1.6], [2.2, 2.4], [2.05, 2.6], [2.15, 3.3], [2, 4], [1.7, 4.6], [1.2, 5], [1.05, 5.2], [.95, 5.6], [.7, 5.8], [.8, 6], [.5, 6.4], [.46, 6.8], [.32, 7.4], [.14, 7.9], [.05, 8.3], [0, 8.4]];
+const stupaGeo = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 32);
 const gold = new THREE.MeshStandardMaterial({ color: 0xd9a92e, metalness: 0.55, roughness: 0.32, emissive: 0x6a4708, emissiveIntensity: 0 });
 {
   const rockMat = new THREE.MeshLambertMaterial({ color: 0x8e8a83, flatShading: true });
@@ -351,9 +358,6 @@ const gold = new THREE.MeshStandardMaterial({ color: 0xd9a92e, metalness: 0.55, 
   const add = (mesh, x, y, z) => { mesh.position.set(x, y, z); tk.add(mesh); return mesh; };
   const T0 = ROCK_H + 3;
   add(new THREE.Mesh(new THREE.BoxGeometry(34, 1.2, 18), white), 0, T0 + 0.6, 0); // the terrace
-  // Burmese stupa profile: terraces, bell, bands, lotus, banana bud
-  const prof = [[0, 0], [3, 0], [3, .8], [2.6, .8], [2.6, 1.6], [2.2, 1.6], [2.2, 2.4], [2.05, 2.6], [2.15, 3.3], [2, 4], [1.7, 4.6], [1.2, 5], [1.05, 5.2], [.95, 5.6], [.7, 5.8], [.8, 6], [.5, 6.4], [.46, 6.8], [.32, 7.4], [.14, 7.9], [.05, 8.3], [0, 8.4]];
-  const stupaGeo = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 32);
   const stupa = (x, y, z, s) => {
     add(new THREE.Mesh(new THREE.BoxGeometry(7 * s, 1.2 * s, 7 * s), white), x, y + 0.6 * s, z);
     add(new THREE.Mesh(stupaGeo, gold), x, y + 1.2 * s, z).scale.setScalar(s);
@@ -388,6 +392,33 @@ const gold = new THREE.MeshStandardMaterial({ color: 0xd9a92e, metalness: 0.55, 
   footprints.push({ p: ring, cx: TKX, cz: TKZ, r: 31, top: g0 + T0, base: g0, name: 'Taung Kwe Pagoda' });
   const tw = [TKX + TX - 3.5, TKZ + TZ - 3.5, TKX + TX + 3.5, TKZ + TZ - 3.5, TKX + TX + 3.5, TKZ + TZ + 3.5, TKX + TX - 3.5, TKZ + TZ + 3.5];
   footprints.push({ p: tw, cx: TKX + TX, cz: TKZ + TZ, r: 5, top: g0 + y + 5, base: g0, name: 'Taung Kwe lift tower' });
+}
+
+// ---------- Myo Nan Pagoda (မြို့နာမ်စေတီ) ----------
+// A large gilded stupa on a white terrace, sized to the platform traced from satellite
+// imagery. No photos were found, so the stupa itself is a typical Burmese design.
+let MN_TOP = 0;
+{
+  const plat = myoNanPlatform ?? (() => { const r = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) r.push(MNX + Math.cos(a) * 20, MNZ + Math.sin(a) * 20); return r; })();
+  const m = plat.length / 2; let cx = 0, cz = 0, g0 = Infinity, rad = Infinity;
+  for (let i = 0; i < m; i++) { cx += plat[i * 2] / m; cz += plat[i * 2 + 1] / m; }
+  for (let i = 0; i < m; i++) { g0 = Math.min(g0, ground(plat[i * 2], plat[i * 2 + 1])); rad = Math.min(rad, Math.hypot(plat[i * 2] - cx, plat[i * 2 + 1] - cz)); }
+  const white = new THREE.MeshLambertMaterial({ color: 0xf2eee6 });
+  const terrace = new THREE.ExtrudeGeometry(new THREE.Shape(Array.from({ length: m }, (_, i) => new THREE.Vector2(plat[i * 2], -plat[i * 2 + 1]))), { depth: 2.1, bevelEnabled: false });
+  terrace.rotateX(-Math.PI / 2); terrace.translate(0, g0 - 0.6, 0);
+  scene.add(new THREE.Mesh(terrace, white));
+  const top = g0 + 1.5, s = Math.min(4.2, rad * 0.75 / 3);
+  const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); scene.add(o); return o; };
+  add(new THREE.BoxGeometry(7.4 * s, 1.0 * s, 7.4 * s), white, cx, top + 0.5 * s, cz);
+  add(stupaGeo, gold, cx, top + 1.0 * s, cz).scale.setScalar(s);
+  add(new THREE.ConeGeometry(0.42 * s, 1.2 * s, 12), gold, cx, top + 1.0 * s + 8.9 * s, cz);
+  MN_TOP = top + 1.0 * s + 9.6 * s;
+  // four small stupas on the corners of the terrace
+  for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2, r = rad * 0.82; add(stupaGeo, gold, cx + Math.cos(a) * r, top, cz + Math.sin(a) * r).scale.setScalar(0.45); }
+  footprints.push({ p: plat, cx, cz, r: rad + 25, top, base: g0, name: 'Myo Nan Pagoda' });
+  const core = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) core.push(cx + Math.cos(a) * 3 * s, cz + Math.sin(a) * 3 * s);
+  footprints.push({ p: core, cx, cz, r: 3 * s + 1, top: MN_TOP, base: top, name: 'Myo Nan Pagoda' });
+  MN_TOP = { x: cx, z: cz, top: MN_TOP, base: top, rad };
 }
 
 // ---------- spatial hashes ----------
@@ -458,7 +489,8 @@ function label(text, sub, x, z, big) {
 }
 for (const p of data.places) {
   if (p.k === 'city') continue;
-  label(p.n, p.my && p.my !== p.n ? p.my : null, p.x, p.z, false);
+  const l = label(p.n, p.my && p.my !== p.n ? p.my : null, p.x, p.z, false);
+  if (p.n === 'Myo Nan Pagoda') l.position.set(MN_TOP.x, MN_TOP.top + 6, MN_TOP.z);
 }
 const city = data.places.find((p) => p.k === 'city');
 if (city) label('Loikaw', city.my, city.x, city.z, true);
@@ -632,6 +664,7 @@ const flameMat = new THREE.ShaderMaterial({
   const tkBase = ground(TKX, TKZ) - 3 + 33 + 1.2;
   strands(TKX + 2, tkBase + 19, TKZ - 1, 15, tkBase + 0.4, 24, 26, [CANDLE, new THREE.Color(0xfff1c0)]);
   for (let x = -17; x <= 17; x += 0.9) for (const z of [-9, 9]) put(TKX + x, tkBase + 0.2, TKZ + z, CANDLE, 0.4);
+  strands(MN_TOP.x, MN_TOP.top, MN_TOP.z, MN_TOP.rad * 0.9, MN_TOP.base + 0.3, 32, 34, [CANDLE, new THREE.Color(0xfff1c0), LANTERNS[1]]);
   const clBase = ground(CLX, CLZ);
   strands(CLX, clBase + 16.5, CLZ, 4.9, clBase + 0.9, 16, 22, LANTERNS);
   const g = new THREE.BufferGeometry();
