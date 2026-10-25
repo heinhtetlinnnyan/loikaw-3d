@@ -248,9 +248,8 @@ const tri = (B, a, b, c, ua, ub, uc, col) => {
 const toLocal = (lat, lon) => [(lon - data.origin[1]) * 111320 * Math.cos(data.origin[0] * Math.PI / 180), -(lat - data.origin[0]) * 110540];
 // the clock tower stands on a roundabout: keep satellite-traced footprints off it
 const [CLX, CLZ] = toLocal(19.67717, 97.21201);
-// Myo Nan Pagoda's platform is in the satellite footprints; it's drawn as a pagoda instead of a house
-const [MNX, MNZ] = toLocal(19.677785, 97.211291);
-let myoNanPlatform = null;
+// Myo Nan Pagoda: a walled courtyard about 33 x 47 m; the stupa sits ~7 m east of the OSM point
+const [MNX0, MNZ0] = toLocal(19.677785, 97.211291), MNX = MNX0 + 7, MNZ = MNZ0 + 2;
 // သီရိမင်္ဂလာဈေး: the market area from OpenStreetMap; its halls get rows of low blue gable roofs
 const MARKET = [[19.667294, 97.213674], [19.667593, 97.214728], [19.666268, 97.215265], [19.665982, 97.214184]].flatMap(([a, o]) => toLocal(a, o));
 const MARKET_ROOFS = [0x4a7db8, 0x3f6fa8, 0x5a8cc0, 0x6d8fae];
@@ -268,7 +267,7 @@ data.buildings.forEach((b, n) => {
   }
   cx /= m; cz /= m; area /= 2;
   if (Math.hypot(cx - CLX, cz - CLZ) < 9) return;
-  if (Math.hypot(cx - MNX, cz - MNZ) < 8 && m > 6) { myoNanPlatform = p; return; }
+  if (Math.abs(cx - MNX) < 17 && Math.abs(cz - MNZ) < 24) return; // inside the pagoda courtyard
   // walls must wind so their faces point outwards
   const order = [...Array(m).keys()]; if (area > 0) order.reverse();
   area = Math.abs(area);
@@ -425,30 +424,44 @@ const gold = new THREE.MeshStandardMaterial({ color: 0xd9a92e, metalness: 0.55, 
 }
 
 // ---------- Myo Nan Pagoda (မြို့နာမ်စေတီ) ----------
-// A large gilded stupa on a white terrace, sized to the platform traced from satellite
-// imagery. No photos were found, so the stupa itself is a typical Burmese design.
-let MN_TOP = 0;
+// From an aerial view: a white-paved walled courtyard, a large gilded pagoda on stepped
+// square terraces with porches on all four sides and small spires at the corners,
+// green-roofed shrines to the north, and an entrance pavilion at the south-east.
+let MN_TOP;
 {
-  const plat = myoNanPlatform ?? (() => { const r = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) r.push(MNX + Math.cos(a) * 20, MNZ + Math.sin(a) * 20); return r; })();
-  const m = plat.length / 2; let cx = 0, cz = 0, g0 = Infinity, rad = Infinity;
-  for (let i = 0; i < m; i++) { cx += plat[i * 2] / m; cz += plat[i * 2 + 1] / m; }
-  for (let i = 0; i < m; i++) { g0 = Math.min(g0, ground(plat[i * 2], plat[i * 2 + 1])); rad = Math.min(rad, Math.hypot(plat[i * 2] - cx, plat[i * 2 + 1] - cz)); }
-  const white = new THREE.MeshLambertMaterial({ color: 0xf2eee6 });
-  const terrace = new THREE.ExtrudeGeometry(new THREE.Shape(Array.from({ length: m }, (_, i) => new THREE.Vector2(plat[i * 2], -plat[i * 2 + 1]))), { depth: 2.1, bevelEnabled: false });
-  terrace.rotateX(-Math.PI / 2); terrace.translate(0, g0 - 0.6, 0);
-  scene.add(new THREE.Mesh(terrace, white));
-  const top = g0 + 1.5, s = Math.min(4.2, rad * 0.75 / 3);
-  const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); scene.add(o); return o; };
-  add(new THREE.BoxGeometry(7.4 * s, 1.0 * s, 7.4 * s), white, cx, top + 0.5 * s, cz);
-  add(stupaGeo, gold, cx, top + 1.0 * s, cz).scale.setScalar(s);
-  add(new THREE.ConeGeometry(0.42 * s, 1.2 * s, 12), gold, cx, top + 1.0 * s + 8.9 * s, cz);
-  MN_TOP = top + 1.0 * s + 9.6 * s;
-  // four small stupas on the corners of the terrace
-  for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2, r = rad * 0.82; add(stupaGeo, gold, cx + Math.cos(a) * r, top, cz + Math.sin(a) * r).scale.setScalar(0.45); }
-  footprints.push({ p: plat, cx, cz, r: rad + 25, top, base: g0, name: 'Myo Nan Pagoda' });
-  const core = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) core.push(cx + Math.cos(a) * 3 * s, cz + Math.sin(a) * 3 * s);
-  footprints.push({ p: core, cx, cz, r: 3 * s + 1, top: MN_TOP, base: top, name: 'Myo Nan Pagoda' });
-  MN_TOP = { x: cx, z: cz, top: MN_TOP, base: top, rad };
+  const g0 = ground(MNX, MNZ), white = new THREE.MeshLambertMaterial({ color: 0xf2eee6 });
+  const paving = new THREE.MeshLambertMaterial({ color: 0xd9d6cf }), greenRoof = new THREE.MeshLambertMaterial({ color: 0x4f8a5e }), greyRoof = new THREE.MeshLambertMaterial({ color: 0xb8b4ac });
+  const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(MNX + x, g0 + y, MNZ + z); scene.add(o); return o; };
+  const W = 33, D = 47;
+  add(new THREE.BoxGeometry(W, 0.8, D), paving, 0, -0.2, 0);                                     // courtyard
+  for (const [x, z, w, d] of [[0, -D / 2, W, 0.4], [-W / 2, 0, 0.4, D], [W / 2, 0, 0.4, D], [-W / 4 - 2, D / 2, W / 2 - 4, 0.4], [W / 4 + 2, D / 2, W / 2 - 4, 0.4]])
+    add(new THREE.BoxGeometry(w, 1.4, d), white, x, 0.7, z);                                      // low wall, gap at the south
+  // stepped terraces with a porch on each side and a small spire on every corner
+  let y = 0.2;
+  for (const [size, h] of [[18, 1.6], [15, 1.5], [12, 1.4]]) {
+    add(new THREE.BoxGeometry(size, h, size), gold, 0, y + h / 2, 0);
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2, porch = add(new THREE.BoxGeometry(size * 0.3, h + 0.6, 2.2), gold, Math.sin(a) * (size / 2 + 0.8), y + (h + 0.6) / 2, Math.cos(a) * (size / 2 + 0.8));
+      porch.rotation.y = a;
+      add(new THREE.ConeGeometry(0.45, 2.6, 8), gold, Math.sin(a) * (size / 2 + 0.8), y + h + 1.9, Math.cos(a) * (size / 2 + 0.8));
+    }
+    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) add(stupaGeo, gold, sx * (size / 2 - 0.8), y + h, sz * (size / 2 - 0.8)).scale.setScalar(0.28);
+    y += h;
+  }
+  const s = 1.75;
+  add(stupaGeo, gold, 0, y, 0).scale.setScalar(s);
+  add(new THREE.ConeGeometry(0.42 * s, 1.2 * s, 12), gold, 0, y + 8.9 * s, 0);
+  // green-roofed shrines to the north, an entrance pavilion by the south gate
+  const shrine = (x, z, w, d, roof) => {
+    add(new THREE.BoxGeometry(w, 3, d), white, x, 1.7, z);
+    const r = add(new THREE.ConeGeometry(Math.hypot(w, d) / 2 + 0.5, 2, 4), roof, x, 4.2, z);
+    r.rotation.y = Math.PI / 4; r.scale.set(w / Math.hypot(w, d) * 1.45, 1, d / Math.hypot(w, d) * 1.45);
+  };
+  shrine(-3, -18.5, 5, 4, greenRoof); shrine(-11, -12, 4.5, 4, greenRoof); shrine(5, -12.5, 4.5, 4, greenRoof); shrine(12, -20.5, 3.5, 3.5, greenRoof);
+  shrine(12, 27, 6, 6, greyRoof);
+  MN_TOP = { x: MNX, z: MNZ, top: g0 + y + 10.1 * s, base: g0 + 0.4, rad: 15 };
+  const core = [-9, -9, 9, -9, 9, 9, -9, 9].map((v, i) => v + (i % 2 ? MNZ : MNX));
+  footprints.push({ p: core, cx: MNX, cz: MNZ, r: 13, top: MN_TOP.top, base: g0, name: 'Myo Nan Pagoda' });
 }
 
 // ---------- spatial hashes ----------
